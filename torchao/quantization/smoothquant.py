@@ -219,16 +219,18 @@ def swap_linear_with_smooth_fq_linear(
             target_cls = source_cls_to_target_cls[type(child)]
             new_child = target_cls.from_float(child, alpha=alpha)
             setattr(model, name, new_child)
+            print(f"Swap module {new_fqn} into {target_cls}")
         else:
             swap_linear_with_smooth_fq_linear(child, skip_fqn_list, new_fqn, alpha)
 
 
 def smooth_fq_linear_to_inference(model, debug_skip_calibration=False) -> None:
-    for _, mod in model.named_modules():
+    for name, mod in model.named_modules():
         if isinstance(mod, tuple(source_cls_to_target_cls.values())):
             if debug_skip_calibration:
                 mod.set_debug_x_absmax()
             mod.to_inference()
+            print(f"Set module {name} to infercen mode")
 
 
 # useful for quickly toggling smoothquant debug settings on all smoothquant
