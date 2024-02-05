@@ -109,3 +109,60 @@ def get_model_size_in_bytes(model):
     for b in model.buffers():
         s += b.nelement() * b.element_size()
     return s
+
+
+import logging
+# set logger format with filename and line number
+formatter = logging.Formatter(
+    "%(asctime)s [%(levelname)s][%(filename)s:%(lineno)d] %(message)s", "%Y-%m-%d %H:%M:%S"
+)
+streamHandler = logging.StreamHandler()
+streamHandler.setFormatter(formatter)
+
+logger = logging.getLogger("torchao")
+logger.handlers.clear()
+logger.setLevel(logging.INFO)
+logger.addHandler(streamHandler)
+
+
+
+def inspect_arguments(func):
+    def wrapper(*args, **kwargs):
+        # Print function name
+        print(f"Function: {func.__name__}")
+
+        # Print positional arguments
+        if args:
+            print("Positional Arguments:")
+            for i, arg in enumerate(args):
+                if isinstance(arg, torch.Tensor):
+                    print(f"Arg {i + 1}: {arg.shape}")
+                else:
+                    print(f"Arg {i + 1}: {arg}")
+
+        # Print keyword arguments
+        if kwargs:
+            print("Keyword Arguments:")
+            for key, value in kwargs.items():
+                if isinstance(value, torch.Tensor):
+                    print(f"{key}: {value.shape}")
+                print(f"{key}: {value}")
+
+        # Print argument names and values
+        arg_names = func.__code__.co_varnames[:func.__code__.co_argcount]
+        print("Argument Names and Values:")
+        for name, value in zip(arg_names, args):
+            if isinstance(value, torch.Tensor):
+                print(f"{name}: {value.shape}")
+            else:
+                print(f"{name}: {value}")
+
+        # Call the original function
+        result = func(*args, **kwargs)
+
+        # # Print the result if needed
+        # print(f"Result: {result}")
+
+        return result
+
+    return wrapper

@@ -9,18 +9,14 @@ from torchao.quantization.utils import (
     LoggingTensorMode,
 )
 
-from torchao.quantization.subclass import Int8DynamicallyQuantizedLinearWeight, Int8WeightOnlyQuantizedLinearWeight
-
-
-import logging
-
-
-# set logger format with filename and line number
-logging.basicConfig(
-    format="%(filename)s:%(lineno)d - %(message)s",
-    level=logging.INFO,
+from torchao.quantization.subclass import (
+    Int8DynamicallyQuantizedLinearWeight,
+    Int8WeightOnlyQuantizedLinearWeight,
 )
-logger = logging.getLogger(__name__)
+
+
+from torchao.quantization.utils import logger
+
 
 class TestCase:
 
@@ -32,7 +28,7 @@ class TestCase:
         test_subclass_from_float,
         min_sqnr=35,
         test_dtype=torch.bfloat16,
-        test_shape=(16, 32, 64),
+        test_shape=(4, 32, 64),
     ):
 
         # x: [bs, in_feats]
@@ -51,7 +47,7 @@ class TestCase:
         self.assertGreater(
             SQNR(ref_f, test),
             min_sqnr,
-            f"{lin.weight.__class__.__name__} failed, no compile, dtype={test_dtype}, (bs, in_feats, out_feats)={test_shape}"
+            f"{lin.weight.__class__.__name__} failed, no compile, dtype={test_dtype}, (bs, in_feats, out_feats)={test_shape}",
         )
         # Test for compile
         # lin_comp = torch.compile(
@@ -66,21 +62,19 @@ class TestCase:
         # )
 
 
+bs = 4
+in_feats = 32
+out_feats = 64
+
+
 test_cases = TestCase()
 test_dtype = torch.float32
 test_cases._test_lin_weight_subclass_impl(
     Int8WeightOnlyQuantizedLinearWeight.from_float,
     min_sqnr=35,
     test_dtype=torch.float32,
-    test_shape=(16, 32, 64),
+    test_shape=(bs, in_feats, out_feats),
 )
 
 
-
-
-
 from typing import Union, Tuple
-
-
-
-
