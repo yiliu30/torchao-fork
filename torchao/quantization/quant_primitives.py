@@ -163,6 +163,10 @@ def dynamically_quantize_per_channel(x, quant_min, quant_max, target_dtype):
     # assumes axis == 0
     # assumes dense memory format
     # TODO(future): relax ^ as needed
+    
+    # Handle the case where the x is 1-dim tensor
+    if x.dim() == 1:
+        return dynamically_quantize_per_tensor(x, quant_min, quant_max, target_dtype)
 
     # default setup for affine quantization of activations
     eps = torch.finfo(torch.float32).eps

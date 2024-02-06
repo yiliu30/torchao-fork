@@ -48,7 +48,15 @@ class DoubleQuantLinearWeight(torch.Tensor):
 
     @classmethod
     def from_float(cls, input_float, quant_scale, quant_zero):
+        logger.info("input_float: %s", input_float)
         w_int_repr, scale, zero = quant_tensor_fn(input_float)
+        logger.info(
+            "w_int_repr shape: %s, scale shape: %s, zero shape: %s",
+            w_int_repr.shape,
+            scale.shape,
+            zero.shape,
+        )
+        logger.info("scale: %s, zero: %s", scale, zero)
         int_data = w_int_repr.contiguous().t()
         if quant_scale:
             scale = DoubleQuantLinearWeight.from_float(
@@ -111,8 +119,8 @@ class DoubleQuantLinearWeight(torch.Tensor):
         logger.info(
             f"shapes of int_data, scale, zero: {int_data.shape}, {scale.shape}, {zero.shape}"
         )
-        # handle `zero` is not zero
-        return int_data * scale
+        # TODO: handle `zero` is not zero, double check the correctness
+        return (int_data - zero) * scale
 
     @classmethod
     def _handle_mm_or_addmm(
@@ -165,7 +173,7 @@ float_ref = lin(input)
 
 logger.info(f"lin.weight shape: {lin.weight.shape}")
 new_dd_weight = DoubleQuantLinearWeight.from_float(
-    lin.weight, quant_scale=False, quant_zero=False
+    lin.weight, quant_scale=True, quant_zero=False
 )
 
 lin.weight = torch.nn.Parameter(data=new_dd_weight, requires_grad=False)
@@ -178,6 +186,16 @@ logger.info(amax)
 
 assert torch.allclose(
     float_ref, output, atol=0.01
-), "Not allclose, the max diff is: {amax}"
+), f"Not allclose, the max diff is: {amax}"
 
-torch.save(lin.state_dict, "lin.double_quant.pt")
+torch.save(lin.state_dict(), "lin.double_quant.pt")
+
+re_loaded_lin_state_dict = torch.load("lin.double_quant.pt")
+re_loaded_lin = torch.nn.Linear(
+    in_features=in_feats, out_features=out_feats, bias=False, device=device
+)
+# TODO: reload the state dict back to linear
+# re_loaded_lin.load_state_dict(re_loaded_lin_state_dict)
+# re_output = re_loaded_lin(input)
+# print(re_output)
+# assert torch.allclose(output, re_output)
