@@ -26,4 +26,20 @@ class TwoStepQuantizer:
         pass
 
 
+
+class TwoStepQuantizer:
+    def prepare(
+        self, model: torch.nn.Module, *args: Any, **kwargs: Any
+    ) -> torch.nn.Module:
+
+        pass
+
+    def convert(
+        self, model: torch.nn.Module, *args: Any, **kwargs: Any
+    ) -> torch.nn.Module:
+
+        pass
+    def load_quantized_model(eager_model_cls, quantized_model_state_dict):
+        pass
+
 ############################# Unified Quantization APIs ##############################
