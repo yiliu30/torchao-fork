@@ -251,6 +251,7 @@ def dequantize_affine(
     """
     # TODO: validations
     # TODO: validate scale/zero_point dimensions are compatible with block_size
+    input = input.clone()
     assert input.dtype == input_dtype
     assert output_dtype in [torch.float32, torch.float16, torch.bfloat16], f"Unsupported output dtype: {output_dtype}"
     quant_min, quant_max = _get_and_check_qmin_qmax(input_dtype, quant_min, quant_max)
