@@ -1,11 +1,15 @@
 """
-# Another issue of autoawq's implementation is that it can not quantize the lm-head, as we donot know how to pass the output of quantized last decoder layer into lm-head
-# But below approach can solve this issue.
-# If we want to quantize the lm-head
-# 1. We need to know that, current linear is the lm-head.  >>> How? swap lm-head with a custom linear? but we need to define the custom linear at ops lib.
-# 2. Pass the linear to the optimizer function, which should be able to quantize the linear and mod that includes sub modules.
-# 3. Return the output and continue the next step.
+# Modified from HDCharles's  https://github.com/pytorch/ao/issues/577
 
+Goal: Pause module(decoder block) forward and do the optimization 
+
+Background:
+Auto-round requires us to, for each decoder,
+
+1. Track all activations going to that decoder
+2. Apply the Auto-round algorithm to update that linear’s weight
+3. Use the updated weight to generate outputs for that linear
+4. Repeat for the next decoder
 
 """
 
