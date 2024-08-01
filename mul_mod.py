@@ -289,10 +289,10 @@ from torch.library import Library
 
 t_lib = Library("transformers_ops", "DEF")
 
-# The definition doesn't need to match the actual function signature.
-# It's just a flag to let the dispatcher know that this function(decoder block) is what we want to optimize.
+# It seems that the definition of the custom operation doesn't need to match the actual function signature exactly.
+# It merely serves as a flag to inform the dispatcher that this function(decoder block) is intended for optimization.
 # All of the args and kwargs will be passed to the optimized function,
-# which will be responsible for unpacking them and returning the correct output.
+# which will handle unpacking them and returning the correct output.
 # The call flow:
 #   `DecoderLayerWrapper.forward` -> `general_decoder` under `__torch_function__` -> `optimize_decoder` -> return the optimized output
 t_lib.define("general_decoder(Tensor hidden_state) -> (Tensor, Tensor[])")
