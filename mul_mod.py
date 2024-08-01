@@ -18,13 +18,13 @@ import torchao.quantization as ao_quant
 from torch.utils._pytree import tree_flatten, tree_unflatten
 
 # ==------------------------------------------------------------------------------------------==
-# MultiTensor from https://gist.github.com/HDCharles/a1b575bbf8875f994af8a01b225e1227
+# MultiTensor, copied from https://gist.github.com/HDCharles/a1b575bbf8875f994af8a01b225e1227
 # ==------------------------------------------------------------------------------------------==
 
 
-def show_params_range(model):
+def inspect_model(model):
     for name, param in model.named_parameters():
-        print(f"{name}: {param.min()}, {param.max()}, shape: {param.shape}")
+        print(f"{name}: shape: {param.shape}, type:{type(param)}")
 
 
 def replace_buffers_and_params(model):
@@ -149,8 +149,8 @@ class MultiTensor(torch.Tensor):
         # run function for each of the multitensors and return a multitensor
         outputs = []
         with torch._C.DisableTorchFunctionSubclass():
-            # Note: for the opt_decoder, we need to optimize the decoder block
-            if "opt_decoder" in func.__name__:
+            # Note: for the decoder, we need to optimize the decoder block
+            if "general_decoder" in func.__name__:
                 outputs = optimize_decoder(func, grouped_args, spec)
             else:
                 for i, inp in enumerate(grouped_args):
@@ -191,98 +191,11 @@ class MultiTensor(torch.Tensor):
 # ==------------------------------------------------------------------------------------------==
 
 
-def apply_auto_round(observed_block, block_inputs, block_outputs):
-    # Call the auto-round to execute the optimization process
-    import auto_round
-
-    device = next(observed_block.parameters()).device
-
-    block = observed_block
-
-    # Start the training process to update the v, alpha and betta.
-    # TODO: refactor the `quant_block_` to a static method
-    rounder = auto_round.AutoRound(
-        model=block,
-        tokenizer=None,
-        sym=False,  # Both True and False are OK
-        bits=4,
-        iters=10,
-        use_quant_input=False,  # disable it for now
-        amp=False,
-        low_gpu_mem_usage=False,
-        model_dtype=next(block.parameters()).dtype,
-    )
-    rounder.quant_block_(block, block_inputs, block_outputs, device=device)
-
-
-import transformers
-import transformers.models.opt as tran_opt
-from torch.library import impl, Library
-
-config = tran_opt.modeling_opt.OPTConfig()
-opt_decoder = tran_opt.modeling_opt.OPTDecoderLayer
-opt_model = transformers.AutoModelForCausalLM.from_pretrained("facebook/opt-125m")
-
-# The agrs of opt_decoder.forward
-# hidden_states: torch.Tensor,
-# attention_mask: Optional[torch.Tensor] = None,
-# layer_head_mask: Optional[torch.Tensor] = None,
-# past_key_value: Optional[Tuple[torch.Tensor]] = None,
-# output_attentions: Optional[bool] = False,
-# use_cache: Optional[bool] = False,
-
-# ! This may be the main challenge in this approach for modeling users.
-# TODO: We might infer it using inspect, but this requires the function to have proper annotations.
-t_lib = Library("transformers_ops", "DEF")  # noqa: TOR901
-t_lib.define(
-    "opt_decoder(Tensor hidden_state, Tensor? attention_mask=None, Tensor? layer_head_mask=None, Tensor[]? past_key_value=None, bool? output_attentions=False, bool? use_cache=False, int idx=1) -> (Tensor, Tensor[])"
-)
-
-
-@impl(t_lib, "opt_decoder", "CPU")
-def opt_decoder_impl(
-    hidden_states,
-    attention_mask=None,
-    layer_head_mask=None,
-    past_key_value=None,
-    output_attentions=False,
-    use_cache=False,
-    idx=1,
-):
-    decoder_layer = opt_model.model.decoder.layers[idx]
-    return decoder_layer.forward(
-        hidden_states,
-        attention_mask=attention_mask,
-        layer_head_mask=layer_head_mask,
-        past_key_value=past_key_value,
-        output_attentions=output_attentions,
-        use_cache=use_cache,
-    )
-
-
-# Global variables for mapping the decoder block index to the module
-idx = -1
-mods_mapping: Dict[int, torch.nn.Module] = {}
-
-
-class OptDecoderLayerWrapper(torch.nn.Module):
-    def __init__(self, orig_mod, idx=1):
-        super().__init__()
-        self.idx = idx
-        mods_mapping[idx] = orig_mod
-
-    def forward(self, *args, **kwargs):
-        kwargs.update({"idx": self.idx})
-        return torch.ops.transformers_ops.opt_decoder(*args, **kwargs)
-
-
-show_params_range(opt_model)
-
-
+# Some helper functions, not important, go to Main logic section directly
 def replace_decoder_block(mod):
     global idx
     idx += 1
-    return OptDecoderLayerWrapper(mod, idx)
+    return DecoderLayerWrapper(mod, idx)
 
 
 def is_decoder(mod, fqn):
@@ -295,7 +208,7 @@ def _get_decoder_layers_by_index(idx):
 
 
 def is_wrapped_decoder(mod, fqn):
-    return isinstance(mod, OptDecoderLayerWrapper)
+    return isinstance(mod, DecoderLayerWrapper)
 
 
 def revert_decoder_block_replacement(mod):
@@ -322,10 +235,82 @@ def _unflatten_grouped_args(grouped_args, spec):
     return inputs
 
 
-def optimize_mod_(mod, grouped_args, spec, origin_output):
+def apply_auto_round(observed_block, block_inputs, block_outputs):
+    # Call the auto-round to execute the optimization process
+    import auto_round
+
+    device = next(observed_block.parameters()).device
+
+    block = observed_block
+
+    # Start the training process to update the v, alpha and betta.
+    # TODO: refactor the `quant_block_` to a static method
+    rounder = auto_round.AutoRound(
+        model=block,
+        tokenizer=None,
+        sym=False,  # Both True and False are OK
+        bits=4,
+        iters=10,
+        use_quant_input=False,  # disable it for now
+        amp=False,
+        low_gpu_mem_usage=False,
+        model_dtype=next(block.parameters()).dtype,
+    )
+    rounder.quant_block_(block, block_inputs, block_outputs, device=device)
+
+
+def apply_ao_int_woq(observed_block):
+    # TODO: int4 woq not needs inputs/outputs, just for demo
+    for name, mod in observed_block.named_modules():
+        if isinstance(mod, torch.nn.Linear):
+            mod.weight = torch.nn.Parameter(
+                mod.weight.to(torch.bfloat16), requires_grad=False
+            )
+            ao_quant.quant_api.int4_weight_only()(mod)
+    return observed_block
+
+
+# ==------------------------------------------------------------------------------------------==
+# Main logic
+# ==------------------------------------------------------------------------------------------==
+
+
+# Global variables for mapping the decoder block index to the module
+# TODO: make it more robust
+idx = -1
+mods_mapping: Dict[int, torch.nn.Module] = {}
+
+
+from torch.library import Library
+
+t_lib = Library("transformers_ops", "DEF")
+
+# The definition doesn't need to match the actual function signature.
+# It's just a flag to let the dispatcher know that this function(decoder block) is what we want to optimize.
+# All of the args and kwargs will be passed to the optimized function,
+# which will be responsible for unpacking them and returning the correct output.
+# The call flow:
+#   `DecoderLayerWrapper.forward` -> `general_decoder` under `__torch_function__` -> `optimize_decoder` -> return the optimized output
+t_lib.define("general_decoder(Tensor hidden_state) -> (Tensor, Tensor[])")
+
+
+class DecoderLayerWrapper(torch.nn.Module):
+    def __init__(self, orig_mod, idx=1):
+        super().__init__()
+        self.idx = idx
+        mods_mapping[idx] = orig_mod
+
+    def forward(self, *args, **kwargs):
+        kwargs.update({"idx": self.idx})
+        return torch.ops.transformers_ops.general_decoder(*args, **kwargs)
+
+
+def _optimize_decoder(mod, grouped_args, spec, origin_output):
+    # Here we got the decoder block, block inputs, and block outputs, we can start the optimization process
     inputs = _unflatten_grouped_args(grouped_args, spec)
     hidden_states_lst = [hidden_states for (hidden_states, kv_cache) in origin_output]
-    apply_auto_round(mod, inputs, hidden_states_lst)
+    # apply_auto_round(mod, inputs, hidden_states_lst)
+    apply_ao_int_woq(mod)
 
 
 def optimize_decoder(func, grouped_args, spec):
@@ -334,16 +319,25 @@ def optimize_decoder(func, grouped_args, spec):
     decoder_layer_idx = first_cur_kwargs["idx"]
     decoder_layer = _get_decoder_layers_by_index(decoder_layer_idx)
     origin_output = infer_mod(decoder_layer, grouped_args, spec)
-    optimize_mod_(decoder_layer, grouped_args, spec, origin_output)
+    _optimize_decoder(decoder_layer, grouped_args, spec, origin_output)
     return origin_output
 
 
+# ==------------------------------------------------------------------------------------------==
+# Main steps to optimize the model
+# ==------------------------------------------------------------------------------------------==
+
+import transformers
+import transformers.models.opt as tran_opt
+
+opt_decoder = tran_opt.modeling_opt.OPTDecoderLayer
+opt_model = transformers.AutoModelForCausalLM.from_pretrained("facebook/opt-125m")
+
+
+inspect_model(opt_model.model.decoder.layers[0])
 # 1. Replace the decoder block with a wrapper block
 _replace_with_custom_fn_if_matches_filter(opt_model, replace_decoder_block, is_decoder)
-print(opt_model.model.decoder.layers[0])
 
-
-print(f"==============================================================")
 # 2. Replace the buffers and parameters with MultiTensor
 _replace_with_custom_fn_if_matches_filter(
     opt_model, replace_buffers_and_params, lambda x, y: True
@@ -361,4 +355,4 @@ print(out.logits.shape)
 _replace_with_custom_fn_if_matches_filter(
     opt_model, revert_decoder_block_replacement, is_wrapped_decoder
 )
-print(opt_model.model.decoder.layers[0])
+inspect_model(opt_model.model.decoder.layers[0])
