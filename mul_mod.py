@@ -34,7 +34,7 @@ def replace_buffers_and_params(model):
 
 
 def _replace_with_custom_fn_if_matches_filter(
-    model,
+    model: torch.nn.Module,
     replacement_fn,
     filter_fn,
     cur_fqn="",
@@ -42,7 +42,9 @@ def _replace_with_custom_fn_if_matches_filter(
     if filter_fn(model, cur_fqn[:-1]):
         model = replacement_fn(model)
     for name, child in model.named_children():
-        new_child = _replace_with_custom_fn_if_matches_filter(child, replacement_fn, filter_fn, f"{cur_fqn}{name}.")
+        new_child = _replace_with_custom_fn_if_matches_filter(
+            child, replacement_fn, filter_fn, f"{cur_fqn}{name}."
+        )
         if new_child is not child:
             setattr(model, name, new_child)
     return model
@@ -88,7 +90,9 @@ class MultiTensor(torch.Tensor):
     def __torch_function__(cls, func, types, args=(), kwargs=None, skip_gptq=False):
         def flat_to_grouped(flat):
             # size of biggest MultiTensor
-            multi_tensor_size = max([x.count if isinstance(x, MultiTensor) else 1 for x in flat])
+            multi_tensor_size = max(
+                [x.count if isinstance(x, MultiTensor) else 1 for x in flat]
+            )
             # convert [A, MultiTensor(b1,b2,b3), MultiTensor(c1,c2,c3)] => [[A,b1,c1], [A,b2,c2] [A,b3,c3]]
             grouped = list(
                 zip(
@@ -110,7 +114,10 @@ class MultiTensor(torch.Tensor):
             # convert [[A,b1,c1], [A,b2,c2] [A,b3,c3]] => [(A,A,A), (b1,b2,b3), (c1,c2,c3)]
             flat_tups = list(zip(*grouped))
             # convert [(A,A,A), (b1,b2,b3), (c1,c2,c3)] => [A, MultiTensor(b1,b2,b3), MultiTensor(c1,c2,c3)]
-            flattened = [cls(tup).cpu() if isinstance(tup[0], torch.Tensor) else tup[0] for tup in flat_tups]
+            flattened = [
+                cls(tup).cpu() if isinstance(tup[0], torch.Tensor) else tup[0]
+                for tup in flat_tups
+            ]
             # need to check that getting rid of all but one from each nonTensor tuple is OK
             non_tensors_equal = min(
                 [True]
@@ -118,12 +125,13 @@ class MultiTensor(torch.Tensor):
                     min(
                         [True]
                         + [  # handle situation where tuples have size 0
-                            tup[0] == x
-                            for x in tup  # check all elements match
+                            tup[0] == x for x in tup  # check all elements match
                         ]
                     )
                     for tup in flat_tups
-                    if not isinstance(tup[0], torch.Tensor)  # look at tuples of nonTensors
+                    if not isinstance(
+                        tup[0], torch.Tensor
+                    )  # look at tuples of nonTensors
                 ]
             )
             return flattened, non_tensors_equal
@@ -161,107 +169,24 @@ class MultiTensor(torch.Tensor):
 
     @classmethod
     def __torch_dispatch__(cls, func, types, args=(), kwargs={}):
-        print(f"under __torch_function__ func: {func.__name__}, start to handle {i}-th input: ")
+        print(
+            f"under __torch_function__ func: {func.__name__}, start to handle {i}-th input: "
+        )
         pass
 
     def __tensor_flatten__(self):
         return ["values"], None
 
     @classmethod
-    def __tensor_unflatten__(cls, tensor_data_dict, tensor_attributes, outer_size, outer_stride):
+    def __tensor_unflatten__(
+        cls, tensor_data_dict, tensor_attributes, outer_size, outer_stride
+    ):
         cls(tensor_data_dict["values"])
 
 
-import transformers
-import transformers.models.opt as tran_opt
-from torch.library import impl, Library
-
-config = tran_opt.modeling_opt.OPTConfig()
-opt_decoder = tran_opt.modeling_opt.OPTDecoderLayer
-opt_model = transformers.AutoModelForCausalLM.from_pretrained("facebook/opt-125m")
-
-# The agrs of opt_decoder.forward
-# hidden_states: torch.Tensor,
-# attention_mask: Optional[torch.Tensor] = None,
-# layer_head_mask: Optional[torch.Tensor] = None,
-# past_key_value: Optional[Tuple[torch.Tensor]] = None,
-# output_attentions: Optional[bool] = False,
-# use_cache: Optional[bool] = False,
-
-# ! Here is the main chanllenge part of this approach
-t_lib = Library("transformers_ops", "DEF")  # noqa: TOR901
-t_lib.define(
-    "opt_decoder(Tensor hidden_state, Tensor? attention_mask=None, Tensor? layer_head_mask=None, Tensor[]? past_key_value=None, bool? output_attentions=False, bool? use_cache=False, int idx=1) -> (Tensor, Tensor[])"
-)
-
-
-@impl(t_lib, "opt_decoder", "CPU")
-def opt_decoder_impl(
-    hidden_states,
-    attention_mask=None,
-    layer_head_mask=None,
-    past_key_value=None,
-    output_attentions=False,
-    use_cache=False,
-    idx=1,
-):
-    decoder_layer = opt_model.model.decoder.layers[idx]
-    print(f"use idx {idx},, use cache = {use_cache}")  # {decoder_layer}")
-    # breakpoint()
-    kk = decoder_layer.forward(
-        hidden_states,
-        attention_mask=attention_mask,
-        layer_head_mask=layer_head_mask,
-        past_key_value=past_key_value,
-        output_attentions=output_attentions,
-        use_cache=use_cache,
-    )
-    return kk
-
-
-class OptDecoderLayerWrapper(torch.nn.Module):
-    def __init__(self, idx=1):
-        super().__init__()
-        self.idx = idx
-
-    def forward(self, *args, **kwargs):
-        kwargs.update({"idx": self.idx})
-        return torch.ops.transformers_ops.opt_decoder(*args, **kwargs)
-
-
-idx = -1
-import copy
-
-opt_model2 = copy.deepcopy(opt_model)
-show_params_range(opt_model2)
-
-
-def replace_opt(mod):
-    global idx
-    idx += 1
-    print(f"replace opt {idx}")
-    return OptDecoderLayerWrapper(idx)
-
-
-def is_decoder(mod, fqn):
-    return isinstance(mod, opt_decoder)
-
-
-def _get_decoder_layers_by_index(idx):
-    global opt_model
-    return opt_model.model.decoder.layers[idx]
-
-
-@torch.no_grad()
-def infer_mod(mod, grouped_args, spec):
-    outputs = []
-    for i, inp in enumerate(grouped_args):
-        # inp = tensors_to_cuda(inp)
-        cur_args, cur_kwargs = tree_unflatten(inp, spec)
-        cur_kwargs.pop("idx")
-        out = mod(*cur_args, **cur_kwargs)
-        outputs.append(out.cpu() if isinstance(out, torch.Tensor) else out)
-    return outputs
+# ==------------------------------------------------------------------------------------------==
+# Pause module forward and do the optimization
+# ==------------------------------------------------------------------------------------------==
 
 
 def apply_auto_round(observed_block, block_inputs, block_outputs):
@@ -288,10 +213,105 @@ def apply_auto_round(observed_block, block_inputs, block_outputs):
     rounder.quant_block_(block, block_inputs, block_outputs, device=device)
 
 
+import transformers
+import transformers.models.opt as tran_opt
+from torch.library import impl, Library
+
+config = tran_opt.modeling_opt.OPTConfig()
+opt_decoder = tran_opt.modeling_opt.OPTDecoderLayer
+opt_model = transformers.AutoModelForCausalLM.from_pretrained("facebook/opt-125m")
+
+# The agrs of opt_decoder.forward
+# hidden_states: torch.Tensor,
+# attention_mask: Optional[torch.Tensor] = None,
+# layer_head_mask: Optional[torch.Tensor] = None,
+# past_key_value: Optional[Tuple[torch.Tensor]] = None,
+# output_attentions: Optional[bool] = False,
+# use_cache: Optional[bool] = False,
+
+# ! Here is the main challenge part of this approach
+t_lib = Library("transformers_ops", "DEF")  # noqa: TOR901
+t_lib.define(
+    "opt_decoder(Tensor hidden_state, Tensor? attention_mask=None, Tensor? layer_head_mask=None, Tensor[]? past_key_value=None, bool? output_attentions=False, bool? use_cache=False, int idx=1) -> (Tensor, Tensor[])"
+)
+
+
+@impl(t_lib, "opt_decoder", "CPU")
+def opt_decoder_impl(
+    hidden_states,
+    attention_mask=None,
+    layer_head_mask=None,
+    past_key_value=None,
+    output_attentions=False,
+    use_cache=False,
+    idx=1,
+):
+    decoder_layer = opt_model.model.decoder.layers[idx]
+    return decoder_layer.forward(
+        hidden_states,
+        attention_mask=attention_mask,
+        layer_head_mask=layer_head_mask,
+        past_key_value=past_key_value,
+        output_attentions=output_attentions,
+        use_cache=use_cache,
+    )
+
+
+idx = -1
+mod_idx_mapping = {}
+
+
+class OptDecoderLayerWrapper(torch.nn.Module):
+    def __init__(self, orig_mod, idx=1):
+        super().__init__()
+        self.idx = idx
+        mod_idx_mapping[idx] = orig_mod
+
+    def forward(self, *args, **kwargs):
+        kwargs.update({"idx": self.idx})
+        return torch.ops.transformers_ops.opt_decoder(*args, **kwargs)
+
+
+show_params_range(opt_model)
+
+
+def replace_opt(mod):
+    global idx
+    idx += 1
+    return OptDecoderLayerWrapper(mod, idx)
+
+
+def is_decoder(mod, fqn):
+    return isinstance(mod, opt_decoder)
+
+
+def _get_decoder_layers_by_index(idx):
+    global mod_idx_mapping
+    return mod_idx_mapping[idx]
+
+
+def is_mod_decoder(mod, fqn):
+    return isinstance(mod, OptDecoderLayerWrapper)
+
+
+def revert_replace_opt(mod):
+    return mod_idx_mapping[mod.idx]
+
+
+@torch.no_grad()
+def infer_mod(mod, grouped_args, spec):
+    outputs = []
+    for i, inp in enumerate(grouped_args):
+        cur_args, cur_kwargs = tree_unflatten(inp, spec)
+        cur_kwargs.pop("idx")
+        out = mod(*cur_args, **cur_kwargs)
+        outputs.append(out.cpu() if isinstance(out, torch.Tensor) else out)
+    return outputs
+
+
 def _flatten_grouped_args(grouped_args, spec):
     inputs = []
     for i, inp in enumerate(grouped_args):
-        # inp = tensors_to_cuda(inp)
         cur_args, cur_kwargs = tree_unflatten(inp, spec)
         cur_kwargs.pop("idx")
         inputs.append((cur_args, cur_kwargs))
@@ -299,11 +319,9 @@ def _flatten_grouped_args(grouped_args, spec):
 
 
 def optimize_mod_(mod, grouped_args, spec, origin_output):
-    # update the param
     inputs = _flatten_grouped_args(grouped_args, spec)
     hidden_states_lst = [hidden_states for (hidden_states, kv_cache) in origin_output]
     apply_auto_round(mod, inputs, hidden_states_lst)
-    breakpoint()
 
 
 def optimized_decoder(func, grouped_args, spec):
@@ -313,22 +331,27 @@ def optimized_decoder(func, grouped_args, spec):
     decoder_layer = _get_decoder_layers_by_index(decoder_layer_idx)
     origin_output = infer_mod(decoder_layer, grouped_args, spec)
     optimize_mod_(decoder_layer, grouped_args, spec, origin_output)
-
     return origin_output
 
 
-_replace_with_custom_fn_if_matches_filter(opt_model2, replace_opt, is_decoder)
-print(opt_model2)
+_replace_with_custom_fn_if_matches_filter(opt_model, replace_opt, is_decoder)
+print(opt_model)
 
-multi_input_ids = MultiTensor([torch.tensor([[0, 1, 2, 3, 4]]), torch.tensor([[0, 1, 2, 3, 4]])])
+multi_input_ids = MultiTensor(
+    [torch.tensor([[0, 1, 2, 3, 4]]), torch.tensor([[0, 1, 2, 3, 4]])]
+)
 
 
 print(f"==============================================================")
-# with torch.no_grad():
-_replace_with_custom_fn_if_matches_filter(opt_model2, replace_buffers_and_params, lambda x, y: True)
+
+_replace_with_custom_fn_if_matches_filter(
+    opt_model, replace_buffers_and_params, lambda x, y: True
+)
 for i in range(1):
     print(f"=========== iteration {i}")
-    out = opt_model2(multi_input_ids)
+    out = opt_model(multi_input_ids)
     print(out.logits.shape)
 
+
+_replace_with_custom_fn_if_matches_filter(opt_model, revert_replace_opt, is_mod_decoder)
 show_params_range(opt_model)
