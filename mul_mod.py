@@ -10,13 +10,15 @@
 """
 
 import gc
+from typing import Dict
 
 import torch
 import torch.nn as nn
+import torchao.quantization as ao_quant
 from torch.utils._pytree import tree_flatten, tree_unflatten
 
 # ==------------------------------------------------------------------------------------------==
-# Utils
+# MultiTensor from https://gist.github.com/HDCharles/a1b575bbf8875f994af8a01b225e1227
 # ==------------------------------------------------------------------------------------------==
 
 
@@ -147,9 +149,9 @@ class MultiTensor(torch.Tensor):
         # run function for each of the multitensors and return a multitensor
         outputs = []
         with torch._C.DisableTorchFunctionSubclass():
+            # Note: for the opt_decoder, we need to optimize the decoder block
             if "opt_decoder" in func.__name__:
-                outputs = optimized_decoder(func, grouped_args, spec)
-                breakpoint()
+                outputs = optimize_decoder(func, grouped_args, spec)
             else:
                 for i, inp in enumerate(grouped_args):
                     # inp = tensors_to_cuda(inp)
@@ -229,7 +231,8 @@ opt_model = transformers.AutoModelForCausalLM.from_pretrained("facebook/opt-125m
 # output_attentions: Optional[bool] = False,
 # use_cache: Optional[bool] = False,
 
-# ! Here is the main challenge part of this approach
+# ! This may be the main challenge in this approach for modeling users.
+# TODO: We might infer it using inspect, but this requires the function to have proper annotations.
 t_lib = Library("transformers_ops", "DEF")  # noqa: TOR901
 t_lib.define(
     "opt_decoder(Tensor hidden_state, Tensor? attention_mask=None, Tensor? layer_head_mask=None, Tensor[]? past_key_value=None, bool? output_attentions=False, bool? use_cache=False, int idx=1) -> (Tensor, Tensor[])"
@@ -257,15 +260,16 @@ def opt_decoder_impl(
     )
 
 
+# Global variables for mapping the decoder block index to the module
 idx = -1
-mod_idx_mapping = {}
+mods_mapping: Dict[int, torch.nn.Module] = {}
 
 
 class OptDecoderLayerWrapper(torch.nn.Module):
     def __init__(self, orig_mod, idx=1):
         super().__init__()
         self.idx = idx
-        mod_idx_mapping[idx] = orig_mod
+        mods_mapping[idx] = orig_mod
 
     def forward(self, *args, **kwargs):
         kwargs.update({"idx": self.idx})
@@ -275,7 +279,7 @@ class OptDecoderLayerWrapper(torch.nn.Module):
 show_params_range(opt_model)
 
 
-def replace_opt(mod):
+def replace_decoder_block(mod):
     global idx
     idx += 1
     return OptDecoderLayerWrapper(mod, idx)
@@ -286,16 +290,16 @@ def is_decoder(mod, fqn):
 
 
 def _get_decoder_layers_by_index(idx):
-    global mod_idx_mapping
-    return mod_idx_mapping[idx]
+    global mods_mapping
+    return mods_mapping[idx]
 
 
 def is_mod_decoder(mod, fqn):
     return isinstance(mod, OptDecoderLayerWrapper)
 
 
-def revert_replace_opt(mod):
-    return mod_idx_mapping[mod.idx]
+def revert_decoder_block_replacement(mod):
+    return mods_mapping[mod.idx]
 
 
 @torch.no_grad()
@@ -309,7 +313,7 @@ def infer_mod(mod, grouped_args, spec):
     return outputs
 
 
-def _flatten_grouped_args(grouped_args, spec):
+def _unflatten_grouped_args(grouped_args, spec):
     inputs = []
     for i, inp in enumerate(grouped_args):
         cur_args, cur_kwargs = tree_unflatten(inp, spec)
@@ -319,12 +323,12 @@ def _flatten_grouped_args(grouped_args, spec):
 
 
 def optimize_mod_(mod, grouped_args, spec, origin_output):
-    inputs = _flatten_grouped_args(grouped_args, spec)
+    inputs = _unflatten_grouped_args(grouped_args, spec)
     hidden_states_lst = [hidden_states for (hidden_states, kv_cache) in origin_output]
     apply_auto_round(mod, inputs, hidden_states_lst)
 
 
-def optimized_decoder(func, grouped_args, spec):
+def optimize_decoder(func, grouped_args, spec):
     first_grouped_args = grouped_args[0]
     first_cur_args, first_cur_kwargs = tree_unflatten(first_grouped_args, spec)
     decoder_layer_idx = first_cur_kwargs["idx"]
@@ -334,24 +338,26 @@ def optimized_decoder(func, grouped_args, spec):
     return origin_output
 
 
-_replace_with_custom_fn_if_matches_filter(opt_model, replace_opt, is_decoder)
-print(opt_model)
+# Replace the decoder block with a wrapper block
+_replace_with_custom_fn_if_matches_filter(opt_model, replace_decoder_block, is_decoder)
+print(opt_model.model.decoder.layers[0])
+
+
+print(f"==============================================================")
+# Replace the buffers and parameters with MultiTensor
+_replace_with_custom_fn_if_matches_filter(
+    opt_model, replace_buffers_and_params, lambda x, y: True
+)
 
 multi_input_ids = MultiTensor(
     [torch.tensor([[0, 1, 2, 3, 4]]), torch.tensor([[0, 1, 2, 3, 4]])]
 )
 
+out = opt_model(multi_input_ids)
+print(out.logits.shape)
 
-print(f"==============================================================")
-
+# Revert the decoder block replacement, the block has been optimized
 _replace_with_custom_fn_if_matches_filter(
-    opt_model, replace_buffers_and_params, lambda x, y: True
+    opt_model, revert_decoder_block_replacement, is_mod_decoder
 )
-for i in range(1):
-    print(f"=========== iteration {i}")
-    out = opt_model(multi_input_ids)
-    print(out.logits.shape)
-
-
-_replace_with_custom_fn_if_matches_filter(opt_model, revert_replace_opt, is_mod_decoder)
-show_params_range(opt_model)
+print(opt_model.model.decoder.layers[0])

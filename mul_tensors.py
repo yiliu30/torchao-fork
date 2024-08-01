@@ -195,7 +195,6 @@ with torch.no_grad():
         print(f"=========== iteration {i}")
         out = model(*multi)
         print(f"out: {out.shape}")
-        
 
 
 from torch.library import Library, impl
@@ -244,9 +243,7 @@ def opt_decoder_impl(
     return kk
 
 
-t_lib.define(
-    "opt_decoder_simple(Tensor hidden_states, Tensor? attention_mask=None, int idx=1) -> (Tensor, Tensor[])"
-)
+t_lib.define("opt_decoder_simple(Tensor hidden_states, Tensor? attention_mask=None, int idx=1) -> (Tensor, Tensor[])")
 # opt_decoder1 = opt_model.model.decoder.layers[0]
 
 
@@ -278,7 +275,7 @@ class OptDecoderLayerWrapperSimple(torch.nn.Module):
         # attention_mask = kwargs["attention_mask"]
         # layer_head_mask = kwargs.get("layer_head_mask", None)
         # past_key_value = kwargs.get("past_key_value", None)
-        
+
         # kk =  torch.ops.transformers_ops.opt_decoder(hidden_state, attention_mask, layer_head_mask, past_key_value, idx=self.idx)
         # return torch.ops.transformers_ops.opt_decoder(*args, **kwargs)
         update_kwargs = {k: v for k, v in kwargs.items() if k in ["attention_mask"]}
@@ -297,7 +294,7 @@ class OptDecoderLayerWrapper(torch.nn.Module):
         # # attention_mask = kwargs["attention_mask"]
         # # layer_head_mask = kwargs.get("layer_head_mask", None)
         # # past_key_value = kwargs.get("past_key_value", None)
-        
+
         # # kk =  torch.ops.transformers_ops.opt_decoder(hidden_state, attention_mask, layer_head_mask, past_key_value, idx=self.idx)
         # # return torch.ops.transformers_ops.opt_decoder(*args, **kwargs)
         # update_kwargs = {k: v for k, v in kwargs.items() if k in ["attention_mask"]}
