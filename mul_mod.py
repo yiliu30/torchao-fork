@@ -294,7 +294,7 @@ def _get_decoder_layers_by_index(idx):
     return mods_mapping[idx]
 
 
-def is_mod_decoder(mod, fqn):
+def is_wrapped_decoder(mod, fqn):
     return isinstance(mod, OptDecoderLayerWrapper)
 
 
@@ -338,17 +338,18 @@ def optimize_decoder(func, grouped_args, spec):
     return origin_output
 
 
-# Replace the decoder block with a wrapper block
+# 1. Replace the decoder block with a wrapper block
 _replace_with_custom_fn_if_matches_filter(opt_model, replace_decoder_block, is_decoder)
 print(opt_model.model.decoder.layers[0])
 
 
 print(f"==============================================================")
-# Replace the buffers and parameters with MultiTensor
+# 2. Replace the buffers and parameters with MultiTensor
 _replace_with_custom_fn_if_matches_filter(
     opt_model, replace_buffers_and_params, lambda x, y: True
 )
 
+# 3. Caliration and optimization
 multi_input_ids = MultiTensor(
     [torch.tensor([[0, 1, 2, 3, 4]]), torch.tensor([[0, 1, 2, 3, 4]])]
 )
@@ -356,8 +357,8 @@ multi_input_ids = MultiTensor(
 out = opt_model(multi_input_ids)
 print(out.logits.shape)
 
-# Revert the decoder block replacement, the block has been optimized
+# 4. Revert the decoder block replacement, the block has been optimized
 _replace_with_custom_fn_if_matches_filter(
-    opt_model, revert_decoder_block_replacement, is_mod_decoder
+    opt_model, revert_decoder_block_replacement, is_wrapped_decoder
 )
 print(opt_model.model.decoder.layers[0])
