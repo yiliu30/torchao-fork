@@ -251,7 +251,7 @@ t_lib.define(
 
 
 @impl(t_lib, "opt_decoder_simple", "CPU")
-def                                                                                              (
+def opt_decoder_simple_impl(
     hidden_states,
     attention_mask=None,
     idx=1,
