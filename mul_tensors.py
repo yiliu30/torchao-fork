@@ -194,6 +194,8 @@ with torch.no_grad():
     for i in range(1):
         print(f"=========== iteration {i}")
         out = model(*multi)
+        print(f"out: {out.shape}")
+        
 
 
 from torch.library import Library, impl
@@ -213,7 +215,7 @@ opt_model = transformers.AutoModelForCausalLM.from_pretrained("facebook/opt-125m
 
 t_lib = Library("transformers_ops", "DEF")  # noqa: TOR901
 t_lib.define(
-    "opt_decoder(Tensor hidden_state, Tensor? attention_mask=None, Tensor? layer_head_mask=None, Tensor[]? past_key_value=None, bool? output_attentions=False, bool? use_cache=False, int idx=1) -> Tensor[]"
+    "opt_decoder(Tensor hidden_state, Tensor? attention_mask=None, Tensor? layer_head_mask=None, Tensor[]? past_key_value=None, bool? output_attentions=False, bool? use_cache=False, int idx=1) -> (Tensor, Tensor[])"
 )
 # opt_decoder1 = opt_model.model.decoder.layers[0]
 
@@ -229,7 +231,7 @@ def opt_decoder_impl(
     idx=1,
 ):
     decoder_layer = opt_model.model.decoder.layers[idx]
-    print(f"use idx {idx},")  # {decoder_layer}")
+    print(f"use idx {idx},, use cache = {use_cache}")  # {decoder_layer}")
     # breakpoint()
     kk = decoder_layer.forward(
         hidden_states,
@@ -239,7 +241,6 @@ def opt_decoder_impl(
         output_attentions=output_attentions,
         use_cache=use_cache,
     )
-    breakpoint()
     return kk
 
 
@@ -250,7 +251,7 @@ t_lib.define(
 
 
 @impl(t_lib, "opt_decoder_simple", "CPU")
-def opt_decoder_simple_impl(
+def                                                                                              (
     hidden_states,
     attention_mask=None,
     idx=1,
@@ -267,7 +268,7 @@ def opt_decoder_simple_impl(
     return kk
 
 
-class OptDecoderLayerWrapper(torch.nn.Module):
+class OptDecoderLayerWrapperSimple(torch.nn.Module):
     def __init__(self, idx=1):
         super().__init__()
         self.idx = idx
@@ -284,6 +285,25 @@ class OptDecoderLayerWrapper(torch.nn.Module):
         update_kwargs.update({"idx": self.idx})
         breakpoint()
         return torch.ops.transformers_ops.opt_decoder_simple(hidden_states, **update_kwargs)
+
+
+class OptDecoderLayerWrapper(torch.nn.Module):
+    def __init__(self, idx=1):
+        super().__init__()
+        self.idx = idx
+
+    def forward(self, *args, **kwargs):
+        # hidden_states = args[0]
+        # # attention_mask = kwargs["attention_mask"]
+        # # layer_head_mask = kwargs.get("layer_head_mask", None)
+        # # past_key_value = kwargs.get("past_key_value", None)
+        
+        # # kk =  torch.ops.transformers_ops.opt_decoder(hidden_state, attention_mask, layer_head_mask, past_key_value, idx=self.idx)
+        # # return torch.ops.transformers_ops.opt_decoder(*args, **kwargs)
+        # update_kwargs = {k: v for k, v in kwargs.items() if k in ["attention_mask"]}
+        kwargs.update({"idx": self.idx})
+        breakpoint()
+        return torch.ops.transformers_ops.opt_decoder(*args, **kwargs)
 
 
 idx = -1
