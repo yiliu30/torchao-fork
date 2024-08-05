@@ -14,21 +14,25 @@ both because primitives were designed based on the fusions that
 come along with it and because that is how we access the intended quantized
 and mixed GEMM kernels
 """
-
+from functools import partial
 import torch
 import torchao
 import torch.nn as nn
 import torch.nn.functional as F
 from typing import Any, Callable, Union, Dict, Optional
 
+from torchao.dtypes import PlainLayoutType
 from torchao.utils import (
     TORCH_VERSION_AFTER_2_4,
     unwrap_tensor_subclass,
 )
 from .subclass import (
     QuantizedLinearWeightBase,
-    LinearActQuantizedTensor,
-    to_linear_act_quantized,
+)
+
+from .linear_activation_quantized_tensor import (
+    LinearActivationQuantizedTensor,
+    to_linear_activation_quantized,
 )
 
 from .quant_primitives import (
@@ -57,6 +61,7 @@ __all__ = [
     "quantize_",
     "int8_dynamic_activation_int4_weight",
     "int8_dynamic_activation_int8_weight",
+    "int8_dynamic_activation_int8_semi_sparse_weight",
     "int4_weight_only",
     "int8_weight_only",
 ]
@@ -187,7 +192,7 @@ def _is_linear(mod, *args):
         and not isinstance(mod.weight, QuantizedLinearWeightBase)
         and not isinstance(mod.weight, AutoQuantizableLinearWeight)
         and not isinstance(mod.weight, AffineQuantizedTensor)
-        and not isinstance(mod.weight, LinearActQuantizedTensor)
+        and not isinstance(mod.weight, LinearActivationQuantizedTensor)
     )
 
 import torch.nn.utils.parametrize as parametrize
@@ -332,6 +337,9 @@ def int8_dynamic_activation_int4_weight(group_size=32):
          size is more fine grained
     """
     def apply_int8_dynamic_activation_int4_weight_quant(weight):
+        if weight.shape[-1] % group_size != 0:
+            return weight
+
         # avoid circular dep
         from torchao.dtypes import to_affine_quantized
 
@@ -349,7 +357,7 @@ def int8_dynamic_activation_int4_weight(group_size=32):
         input_quant_func = lambda x: to_affine_quantized(x, input_mapping_type, _get_per_token_block_size(x), input_target_dtype)
 
         weight = to_affine_quantized(weight, mapping_type, block_size, target_dtype, quant_min, quant_max, eps)
-        weight = to_linear_act_quantized(weight, input_quant_func)
+        weight = to_linear_activation_quantized(weight, input_quant_func)
         return weight
 
     return _get_linear_subclass_inserter(apply_int8_dynamic_activation_int4_weight_quant)
@@ -374,6 +382,9 @@ def int4_weight_only(group_size=128, inner_k_tiles=8):
         `inner_k_tiles`: parameter for int4 mm kernel, choices are [8, 4, 2]
     """
     def apply_int4_weight_only_quant(weight):
+        if weight.shape[-1] % group_size != 0:
+            return weight
+
         # avoid circular dep
         from torchao.dtypes import to_affine_quantized
         from torchao.dtypes import TensorCoreTiledLayoutType
@@ -410,7 +421,8 @@ def int8_weight_only():
 
     return _get_linear_subclass_inserter(apply_int8wo_quant)
 
-def int8_dynamic_activation_int8_weight():
+
+def int8_dynamic_activation_int8_weight(layout_type=PlainLayoutType()):
     """
     Applies int8 dynamic symmetric per-token activation and int8 per-channel weight
     quantization to linear layers
@@ -440,8 +452,17 @@ def int8_dynamic_activation_int8_weight():
         input_quant_func = lambda x: to_affine_quantized(x, input_mapping_type, _get_per_token_block_size(x), input_target_dtype, eps=input_eps, quant_min=input_quant_min, quant_max=input_quant_max, scale_dtype=torch.float32 if x.dtype == torch.float16 else None)
 
         block_size = get_weight_block_size(weight)
-        weight = to_affine_quantized(weight, mapping_type, block_size, target_dtype, eps=eps, zero_point_dtype=zero_point_dtype)
-        weight = to_linear_act_quantized(weight, input_quant_func)
+        weight = to_affine_quantized(weight, mapping_type, block_size, target_dtype, eps=eps, zero_point_dtype=zero_point_dtype, layout_type=layout_type)
+        weight = to_linear_activation_quantized(weight, input_quant_func)
         return weight
 
     return _get_linear_subclass_inserter(apply_int8_dynamic_activation_int8_weight_quant)
+
+
+def int8_dynamic_activation_int8_semi_sparse_weight():
+    """
+    Applies int8 dnynamic symmetric per-token activation and int8 per-channel weight
+    quantization + 2:4 sparsity to linear layers.
+    """
+    from torchao.dtypes import SemiSparseLayoutType
+    return int8_dynamic_activation_int8_weight(layout_type=SemiSparseLayoutType())

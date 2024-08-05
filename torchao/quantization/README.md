@@ -109,8 +109,11 @@ group_size = 32
 quantize_(m, int4_weight_only(group_size=group_size))
 
 # temporary workaround for tensor subclass + torch.compile
+# NOTE: this is only need for torch 2.5+
+from torchao.utils import TORCH_VERSION_AFTER_2_5
 from torchao.utils import unwrap_tensor_subclass
-m = unwrap_tensor_subclass(m)
+if not TORCH_VERSION_AFTER_2_5:
+    unwrap_tensor_subclass(m)
 # compile the model to improve performance
 m = torch.compile(m, mode='max-autotune')
 
@@ -119,9 +122,9 @@ from torchao.utils import benchmark_model
 
 num_runs = 100
 torch._dynamo.reset()
-bf16_time = benchmark_model(m_bf16, num_runs, example_inputs[0])
+bf16_time = benchmark_model(m_bf16, num_runs, example_inputs)
 print(f"bf16 mean time: {bf16_time}")
-int4_time = benchmark_model(m, num_runs, example_inputs[0])
+int4_time = benchmark_model(m, num_runs, example_inputs)
 print(f"int4 weight only quantized mean time: {int4_time}")
 print(f"speedup: {bf16_time / int4_time}")
 
@@ -145,7 +148,7 @@ for n, m in model.named_modules():
         # note: quantization for activation need to be applied after the weight quantization
         # quantization activation (needed by dynamic quantization)
         input_quant_func = int8wo_quant  # specify how input activation is quantized
-        m.weight = nn.Parameter(to_linear_act_quantized(m.weight, input_quant_func))
+        m.weight = nn.Parameter(to_linear_activation_quantized(m.weight, input_quant_func))
 ```
 The model/tensor subclass should also be compatible with AOTI and torch.export, currently we can support
 `torch.export.export` and `torch.aot_compile` with the following workaround:
