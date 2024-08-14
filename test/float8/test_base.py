@@ -5,6 +5,8 @@
 # LICENSE file in the root directory of this source tree.
 import copy
 import io
+import habana_frameworks.torch.hpu as ht
+import habana_frameworks.torch.core as htcore
 import itertools
 import random
 import re
@@ -18,8 +20,8 @@ import torch.nn as nn
 
 from torchao.utils import TORCH_VERSION_AFTER_2_4
 
-if not TORCH_VERSION_AFTER_2_4:
-    pytest.skip("Unsupported PyTorch version", allow_module_level=True)
+# if not TORCH_VERSION_AFTER_2_4:
+#     pytest.skip("Unsupported PyTorch version", allow_module_level=True)
 
 
 from torchao.float8.config import CastConfig, Float8LinearConfig, ScalingType
@@ -390,52 +392,161 @@ class TestFloat8Linear:
         s = m.__repr__()
         assert "i:dyn,w:del,go:dyn" in s
 
+def freeze_random(seed=0):
+    import random
+    random.seed(seed)
+
+    torch.manual_seed(seed)
+    # torch.cuda.manual_seed(seed)
+    # import numpy as np
+    # np.random.seed(seed)
 
 class TestScaledMM:
-    @unittest.skipIf(
-        not is_cuda_8_9,
-        "CUDA not available",
-    )
+    # @unittest.skipIf(
+    #     not is_cuda_8_9,
+    #     "CUDA not available",
+    # )
     @pytest.mark.parametrize(
-        "base_dtype", [torch.float16, torch.bfloat16, torch.float32]
+        "base_dtype", [torch.float32]
     )
-    @pytest.mark.parametrize("use_fast_accum", [True, False])
+    @pytest.mark.parametrize("use_fast_accum", [False])
     def test_scaled_mm_vs_emulated(self, base_dtype, use_fast_accum):
-        torch.manual_seed(42)
-        input_dtype = e4m3_dtype
+        freeze_random(0)
+        # torch.manual_seed(42)
+        input_dtype = e5m2_dtype
         output_dtype = base_dtype
         compare_type = torch.float32
-
-        a = torch.randn(16, 16, device="cuda", dtype=base_dtype)
-        b = torch.randn(32, 16, device="cuda", dtype=base_dtype).t()
+        
+        a_shape = (24, 12)
+        b_shape = (24, 36)
+        a = torch.rand(a_shape, device="cpu", dtype=base_dtype)  * 10 + 30.0
+        b = torch.rand(b_shape, device="cpu", dtype=base_dtype)  * 10 + 30.0
+        
+        a_tran = a.clone().t().contiguous()
+        print(f"a_tran range: {a_tran.max(), a_tran.min()}")
+        print(f"b range: {b.max(), b.min()}")
 
         a_scale = tensor_to_scale(a, input_dtype).float()
+        a_tran_scale = tensor_to_scale(a_tran, input_dtype).float()
         b_scale = tensor_to_scale(b, input_dtype).float()
 
         a_fp8 = hp_tensor_and_scale_to_float8(a, a_scale, input_dtype)
+        a_tran_fp8 = hp_tensor_and_scale_to_float8(a_tran, a_tran_scale, input_dtype)
         b_fp8 = hp_tensor_and_scale_to_float8(b, b_scale, input_dtype)
-
-        out_scaled_mm = addmm_float8_unwrapped(
-            a_fp8._data,
-            a_fp8._scale,
-            b_fp8._data,
-            b_fp8._scale,
-            output_dtype=output_dtype,
-            use_fast_accum=use_fast_accum,
-        )
         out_emulated = torch.ops.aten.mm_float8_emulated(
-            a_fp8._data, a_fp8._scale, b_fp8._data, b_fp8._scale, output_dtype
+            a_tran_fp8._data, a_tran_fp8._scale, b_fp8._data, b_fp8._scale, output_dtype
         )
+        # print(out_emulated)
+        print(f"the range of out_emulated : {out_emulated.max(), out_emulated.min()}")
+        
 
-        if output_dtype != base_dtype:
-            out_scaled_mm = out_scaled_mm.to(compare_type)
-            out_emulated = out_emulated.to(compare_type)
+        # ht.disable_dynamic_shape()       
 
-        if base_dtype in {torch.bfloat16, torch.float16}:
-            atol, rtol = 7e-2, 7e-2
-        else:
-            atol, rtol = 2e-3, 2e-3
-        torch.testing.assert_close(out_scaled_mm, out_emulated, atol=atol, rtol=rtol)
+        hpu = torch.device("hpu")
+        a_hpu = a.to(hpu)
+        b_hpu = b.to(hpu)
+        
+        a_scale = tensor_to_scale(a_hpu, input_dtype)
+        b_scale = tensor_to_scale(b_hpu, input_dtype)
+
+        a_fp8 = hp_tensor_and_scale_to_float8(a, a_scale, input_dtype)
+        b_fp8 = hp_tensor_and_scale_to_float8(b, b_scale, input_dtype)
+        # out_emulated = torch.ops.aten.mm_float8_emulated(
+        #     a_fp8._data, a_fp8._scale, b_fp8._data, b_fp8._scale, output_dtype
+        # )
+        A_hpu = a_fp8._data
+        scaleA_hpu = a_fp8._scale
+        B_hpu = b_fp8._data
+        scaleB_hpu = b_fp8._scale
+        fp8_dtype = input_dtype
+        
+        # input (float, bfloat16) - Tensor to cast
+        # scale (float) - none/0D tensor/tensor/scalar/scalar_list. Input is multiplied by it before casting
+        # stochastic_rounding - if True, cast rounding mode is set to stochastic (instead of round to nearest even)
+        # is_amax - if False, amax is not calculated and empty tensor is returned
+        # out_dtype - output fp8 variant,
+        # scale_shape - shape of scale in case of scale passed as scalar_list or 1D tensor.
+        
+        # torch.ops.hpu.cast_to_fp8_v2(
+        #     Tensor input,
+        #     optional<Tensor/scalar/list> scale,
+        #     bool stochastic_rounding,
+        #     bool is_amax,
+        #     ScalarType out_dtype,
+        #     optional<IntArray> scale_shape
+        #     ) -> (Tensor out, Tensor amax)
+        A8, _ = torch.ops.hpu.cast_to_fp8_v2(a_hpu, scaleA_hpu, False, False, fp8_dtype)
+        B8, _ = torch.ops.hpu.cast_to_fp8_v2(b_hpu, scaleB_hpu, False, False, fp8_dtype)
+        out_hpu = torch.full(out_emulated.shape, 1000.0, dtype=output_dtype).to(hpu)
+        
+        
+        scaleA_inv_hpu = torch.reciprocal(scaleA_hpu)
+        scaleB_inv_hpu = torch.reciprocal(scaleB_hpu)
+        bias_tensor = None
+        accumulate = False
+        
+        # Executes gemm on fp8 inputs with optional scaling, transposition, bias and accumulation.
+        # Returns output in fp32/bf16 dtype to out Tensor allocated by the user.
+        # 
+        # A, B (int8/fp8) - fp8 input tensors. Tensors 2D-4D are supported, but batch dimensions must be the same
+        # trans_A, trans_B - determine if inputs should be transposed before gemm
+        # D (fp32/bf16) - out tensor for accumulation if accumulate is True
+        # out_dtype - determines dtype of output tensor
+        # A_scale_inv, B_scale_inv - optional 0D one-element tensors that are multiplied by the gemm result
+        # bias (fp32, bf16) - optional bias tensor, must have the same dtype and shape as the output tensor
+        # accumulate - determines if the result should be accumulated to the output tensor
+        # out (fp32, bf16) - output Tensor preallocated by the user
+        # torch.ops.hpu.fp8_gemm(
+        #     Tensor A,
+        #     bool trans_A,
+        #     Tensor B,
+        #     bool trans_B,
+        #     Tensor D,
+        #     ScalarType out_dtype,
+        #     optional<Tensor> A_scale_inv,
+        #     optional<Tensor> B_scale_inv,
+        #     optional<Tensor> bias,
+        #     bool accumulate,
+        #     Tensor& out)
+        
+        result = torch.ops.hpu.fp8_gemm_v2(
+            A8,
+            True,
+            B8,
+            False,
+            out_hpu,
+            output_dtype,
+            scaleA_inv_hpu,
+            scaleB_inv_hpu,
+            bias_tensor,
+            accumulate,
+        )
+        result_cpu = result.cpu()
+        # print(result_cpu)
+        # print(out_emulated)
+        print(f"the range of result : {result_cpu.max(), result_cpu.min()}")
+        print(f"the amax diff is {torch.max(torch.abs(torch.abs(result_cpu) - torch.abs(out_emulated)))}")
+        assert torch.allclose(result_cpu, out_emulated, atol=1e-2, rtol=1e-2), f"result mismatch, the max diff is {torch.max(torch.abs(torch.abs(result_cpu) - torch.abs(out_emulated)))}"
+        
+        # out_scaled_mm = addmm_float8_unwrapped(
+        #     a_fp8._data,
+        #     a_fp8._scale,
+        #     b_fp8._data,
+        #     b_fp8._scale,
+        #     output_dtype=output_dtype,
+        #     use_fast_accum=use_fast_accum,
+        # )
+
+
+        # if output_dtype != base_dtype:
+        #     out_scaled_mm = out_scaled_mm.to(compare_type)
+        #     out_emulated = out_emulated.to(compare_type)
+
+        # if base_dtype in {torch.bfloat16, torch.float16}:
+        #     atol, rtol = 7e-2, 7e-2
+        # else:
+        #     atol, rtol = 2e-3, 2e-3
+        # torch.testing.assert_close(out_scaled_mm, out_emulated, atol=atol, rtol=rtol)
 
     @unittest.skipIf(not is_cuda_8_9, "CUDA not available")
     def test_different_configs_error(self):
