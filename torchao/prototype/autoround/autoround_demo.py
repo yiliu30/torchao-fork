@@ -1,3 +1,5 @@
+import logging
+
 import argparse
 
 import torch
@@ -64,28 +66,53 @@ def quantize_model_with_autoround(
         )
         return model
 
+@ar_utils.dump_elapsed_time()
+def _compile_model(model):
+    model = torch.compile(model=model, mode="max-autotune")
+    return model
+
 
 def main(args):
-    model_name_or_path = args.model_name_or_path
-    # Use `torch.bfloat16` as the default dtype for better perf
-    torch_dtype = torch.bfloat16
-    model, tokenizer, decoder_cls = ar_utils.get_float_model_info(
-        model_name_or_path, torch_dtype=torch_dtype
-    )
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = model.to(device)
-    # Workaround for disabling the `kv_cache`, which cause the OOM.
-    model.config.use_cache = False
-    # ar_utils.gen_text(model, tokenizer, "Float model", device="cuda", max_length=50)
+    with torch.no_grad():
+        model_name_or_path = args.model_name_or_path
+        # Use `torch.bfloat16` as the default dtype for better perf
+        torch_dtype = torch.bfloat16
+        model, tokenizer, decoder_cls = ar_utils.get_float_model_info(
+            model_name_or_path, torch_dtype=torch_dtype
+        )
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        model = model.to(device)
+        
+        if args.eval_float_model:
+            logging.warning(f"==================== Eval the float model ====================")
+            model.eval()
+            from torchao.prototype.autoround.hf_eval_utils import run_evaluation
+            res = run_evaluation(model, tokenizer, tasks=args.tasks)
+            torch.cuda.empty_cache()
+        
+        # Workaround for disabling the `kv_cache`, which cause the OOM.
+        model.config.use_cache = False
+        # ar_utils.gen_text(model, tokenizer, "Float model", device="cuda", max_length=50)
 
-    auto_round_config.iters = args.iters
-    auto_round_config.nsamples = args.nsamples
-    auto_round_config.seqlen = args.seqlen
-    auto_round_config.quant_lm_head = args.quant_lm_head
-    quantize_model_with_autoround(
-        model, tokenizer, decoder_cls, auto_round_config, device=device
-    )
-
+        auto_round_config.iters = args.iters
+        auto_round_config.nsamples = args.nsamples
+        auto_round_config.seqlen = args.seqlen
+        auto_round_config.quant_lm_head = args.quant_lm_head
+        if args.woq_int4:
+            from torchao.quantization import quantize_, int4_weight_only
+            quantize_(model, int4_weight_only(group_size=128))
+        else:
+            quantize_model_with_autoround(
+                model, tokenizer, decoder_cls, auto_round_config, device=device
+            )
+        if args.eval:
+            logging.warning(f"==================== Eval the Quantized model ====================")
+            model.eval()
+            if args.compile:
+                logging.warning(f"==================== Compile the Quantized model ====================")
+                model = _compile_model(model)
+            from torchao.prototype.autoround.hf_eval_utils import run_evaluation
+            res = run_evaluation(model, tokenizer, tasks=args.tasks)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -109,10 +136,44 @@ if __name__ == "__main__":
         "--seqlen", default=2048, type=int, help="Sequence length for optimization"
     )
     parser.add_argument(
+        "--woq_int4",
+        default=False,
+        action="store_true",
+        help="Quantize the model with `int4_weight_only`",
+    )
+    parser.add_argument(
+        "--compile",
+        default=False,
+        action="store_true",
+        help="Compile the quantized model for evaluation",
+    )
+    parser.add_argument(
         "--quant_lm_head",
         default=False,
         action="store_true",
         help="Quantize the `lm_head` or not",
     )
+    parser.add_argument(
+        "--eval",
+        default=False,
+        action="store_true",
+        help="Eval the qmodel or not",
+    )
+    parser.add_argument(
+        "--eval_float_model",
+        default=False,
+        action="store_true",
+        help="Eval the qmodel or not",
+    )
+    parser.add_argument(
+        "--full_eval",
+        default=False,
+        action="store_true",
+        help="Eval the qmodel or not",
+    )
+    # wikitext,lambada_openai, hellaswag, winogrande, piqa, mmlu
+    parser.add_argument("--tasks", nargs="+", type=str, default=["wikitext"], help="List of lm-eluther tasks to evaluate usage: --tasks task1 task2")
     args = parser.parse_args()
+    if args.full_eval:
+        args.tasks = ["wikitext", "lambada_openai", "hellaswag", "winogrande", "piqa", "mmlu"]
     main(args)

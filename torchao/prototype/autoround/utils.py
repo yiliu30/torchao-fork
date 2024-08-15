@@ -10,7 +10,7 @@ import torch
 
 get_dataloader = auto_round.calib_dataset.get_dataloader
 
-
+import logging
 def freeze_random(seed=0):
     random.seed(seed)
 
@@ -83,6 +83,18 @@ def gen_example_inputs(tokenizer, device):
     return (input_ids,)
 
 
+def auto_detect_decoder_cls(model: torch.nn.Module):
+    for name, module in model.named_modules():
+        if isinstance(module, torch.nn.ModuleList):
+            assert len(module) > 0, "The module list should not be empty"
+            m0 = module[0]
+            decoder_cls = type(m0)
+            logging.warning(f"Auto-detected decoder class: {decoder_cls}")
+            return decoder_cls
+    logging.warning("No decoder class found")
+    
+            
+
 def get_float_model_info(model_name_or_path, torch_dtype=torch.float32):
     import transformers
 
@@ -95,7 +107,9 @@ def get_float_model_info(model_name_or_path, torch_dtype=torch.float32):
     elif "opt" in model_name_or_path:
         decoder_cls = transformers.models.opt.modeling_opt.OPTDecoderLayer
     else:
-        raise ValueError(f"Unsupported model: {model_name_or_path}")
+        decoder_cls = auto_detect_decoder_cls(model)
+        if not decoder_cls:
+            raise ValueError(f"Unsupported model: {model_name_or_path}")
     return model, tokenizer, decoder_cls
 
 

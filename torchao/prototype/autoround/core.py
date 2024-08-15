@@ -8,7 +8,7 @@ import torchao.prototype.autoround.utils as ar_utils
 import torchao.quantization as ao_quant
 from torchao.dtypes import to_affine_quantized_static
 from torchao.prototype.autoround.multi_tensor import MultiTensor
-
+import logging
 # TODO: remove it before merge
 ar_utils.freeze_random()
 
@@ -73,10 +73,15 @@ def create_qmodel_from_qdq_model(qdq_model: torch.nn.Module):
     )
     return qmodel
 
+layer_idx = 0
 
 @ar_utils.dump_elapsed_time()
 @torch.no_grad()
 def apply_auto_round(block, grouped_args, spec, block_outputs):
+    global layer_idx
+    layer_idx += 1
+    logging.warning(f"Apply auto-round for layer {layer_idx}")
+    
     # Call the auto-round to execute the optimization process
     import auto_round
 
@@ -110,7 +115,8 @@ def apply_auto_round(block, grouped_args, spec, block_outputs):
         rounder.quant_block_v2_(
             block, inputs=block_inputs, outputs=block_outputs, device="cuda"
         )
-    block.to("cpu")
+    block = block.to("cpu")
+    torch.cuda.empty_cache()
     qmodel = create_qmodel_from_qdq_model(block)
     ar_utils.see_memory_usage("After apply auto-round.")
     return qmodel
