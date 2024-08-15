@@ -48,6 +48,8 @@ class ZeroPointDomain(Enum):
 
     integer domain: quantized_val = (float_val / scale) (integer) + zero_point (integer)
     float domain: quantized_val = (float_val - (zero_point (float) - scale * mid_point)) / scale
+    
+    Note: zero_point (float) = (mid_point - zero_point (integer)) * scale
     """
     INT = auto()
     FLOAT = auto()

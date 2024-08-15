@@ -6,10 +6,13 @@ from torch.utils._pytree import tree_flatten, tree_unflatten
 
 import torchao.prototype.autoround.utils as ar_utils
 import torchao.quantization as ao_quant
-from torchao.dtypes import to_affine_quantized_static
+from torchao.dtypes import to_affine_quantized_static, TensorCoreTiledLayoutType
 from torchao.prototype.autoround.multi_tensor import MultiTensor
+from torchao.quantization.quant_primitives import ZeroPointDomain
+from torchao.utils import find_multiple
 import logging
 # TODO: remove it before merge
+logging.basicConfig(level=logging.INFO)
 ar_utils.freeze_random()
 
 
@@ -45,19 +48,38 @@ def create_qmodel_from_qdq_model(qdq_model: torch.nn.Module):
         weight_zero_point = observed_linear.zp.to(device)
 
         def weight_quant_func(weight):
+            # TODO: check the weight shape, group_size, and inner_k_tiles to make sure the tinygemm can handle it
+            inner_k_tiles = 2
+            shifted_zero_point  = (8 - weight_zero_point) * weight_scale
             block_size = (1, observed_linear.group_size)
-            # TODO: shift the zero and prepack the weight to use tinygemm?
+            
+            input_float = weight #.to(torch.bfloat16)
+            orig_out_features, orig_in_features = input_float.shape
+            in_features = find_multiple(orig_in_features, 1024)
+            out_features = find_multiple(orig_out_features, 8)
+            orig_num_groups = orig_in_features // observed_linear.group_size
+            new_num_groups = in_features // observed_linear.group_size
+            # pad scale/zero_point from [orig_out_features, orig_num_groups] to [out_features, new_num_groups]
+            pad_weight_scale = torch.nn.functional.pad(
+                weight_scale,
+                (0, new_num_groups - orig_num_groups, 0, out_features - orig_out_features)
+                )
+            pad_shifted_zero_point = torch.nn.functional.pad(
+                shifted_zero_point,
+                (0, new_num_groups - orig_num_groups, 0, out_features - orig_out_features)
+                )
             return to_affine_quantized_static(
-                input_float=weight,
-                scale=weight_scale,
-                zero_point=weight_zero_point,
+                input_float=input_float,
+                scale=pad_weight_scale.to(torch.bfloat16),
+                zero_point=pad_shifted_zero_point.to(torch.bfloat16),
                 block_size=block_size,
-                target_dtype=torch.uint8,
+                target_dtype=torch.int32,
                 quant_min=0,
                 quant_max=15,
-                zero_point_domain=ao_quant.quant_primitives.ZeroPointDomain.INT,
+                zero_point_domain=ZeroPointDomain.FLOAT,
+                layout_type=TensorCoreTiledLayoutType(inner_k_tiles=inner_k_tiles),
             )
-
+    
         observed_linear.weight = torch.nn.Parameter(
             weight_quant_func(observed_linear.weight), requires_grad=False
         )
@@ -115,11 +137,11 @@ def apply_auto_round(block, grouped_args, spec, block_outputs):
         rounder.quant_block_v2_(
             block, inputs=block_inputs, outputs=block_outputs, device="cuda"
         )
-    block = block.to("cpu")
+    # TODO: if move block to cpu, it will cause accuracy issue.
     torch.cuda.empty_cache()
-    qmodel = create_qmodel_from_qdq_model(block)
+    qblock = create_qmodel_from_qdq_model(block)
     ar_utils.see_memory_usage("After apply auto-round.")
-    return qmodel
+    return qblock
 
 
 @torch.no_grad()
