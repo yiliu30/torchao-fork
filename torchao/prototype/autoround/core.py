@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from typing import Dict, Tuple
-
+import logging
 import torch
 from torch.utils._pytree import tree_flatten, tree_unflatten
 
@@ -50,7 +50,7 @@ def create_qmodel_from_qdq_model(qdq_model: torch.nn.Module):
             # TODO(Yi): check the weight shape, `group_size`, and `inner_k_tiles` to make sure the tinygemm can handle it
             inner_k_tiles = 8
             quant_min = 0
-            quant_max = 15
+            quant_max = 2 ** auto_round_config.bits - 1
             # Shift the zeros to align with tiny gemm.
             # The dequantization process in tiny gemm:
             #   tiny_dequant = (tiny_quant - 8) * scale + tiny_zp
@@ -115,16 +115,20 @@ def create_qmodel_from_qdq_model(qdq_model: torch.nn.Module):
     )
     return qmodel
 
-
+layer_idx = 0
 @ar_utils.dump_elapsed_time()
 @torch.no_grad()
 def apply_auto_round(block, grouped_args, spec, block_outputs):
     # Call the auto-round to execute the optimization process
     import auto_round
-
+    global layer_idx
+    layer_idx += 1
+    logging.info(f"Apply auto-round for layer {layer_idx}")
+    
+    torch.cuda.empty_cache()
     ar_utils.see_memory_usage("Before apply auto-round")
-
     global auto_round_config
+    block = block.to("cuda").to(torch.bfloat16)
 
     # Start the training process to update the v, alpha and betta.
     rounder = auto_round.AutoRound(

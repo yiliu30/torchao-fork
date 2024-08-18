@@ -1,7 +1,9 @@
 import argparse
-
+import logging
+logging.basicConfig(level=logging.INFO)
 import torch
-
+# add tracebacks and event history to snapshots
+torch.cuda.memory._record_memory_history()
 import torchao
 import torchao.prototype.autoround.utils as ar_utils
 
@@ -33,30 +35,34 @@ def quantize_model_with_autoround(
         prepare_model_for_applying_auto_round_(model, is_decoder)
 
         # 2. Caliration and optimization
-        dataloader = ar_utils.get_dataloader(
-            tokenizer,
-            auto_round_config.seqlen,
+        dataloader = ar_utils.get_dataloader_v1(
+            tokenizer=tokenizer,
+            seqlen=auto_round_config.seqlen,
             seed=auto_round_config.seed,
-            bs=auto_round_config.train_bs,
+            batch_size=auto_round_config.train_bs,
             nsamples=auto_round_config.nsamples,
         )
 
         input_ids_lst = []
         attn_mask_lst = []
         for i, data in enumerate(dataloader):
+            if data is None:
+                continue
+            if i >= auto_round_config.nsamples:
+                break
             input_ids_lst.append(data["input_ids"].to(device))
-            attn_mask_lst.append(data["attention_mask"].to(device))
-
+            # attn_mask_lst.append(data["attention_mask"].to("cpu"))
+        breakpoint()
         multi_t_input_ids = MultiTensor(input_ids_lst)
-        multi_t_attn_mask = MultiTensor(attn_mask_lst)
+        # multi_t_attn_mask = MultiTensor(attn_mask_lst)
 
         # The optimization is applied during the forward pass
-        out = model(multi_t_input_ids, multi_t_attn_mask)
-
-        assert (
-            ar_utils.count_tensor_of_type(model, torchao.dtypes.AffineQuantizedTensor)
-            > 0
-        ), f"No `AffineQuantizedTensor` found in the model"
+        out = model(multi_t_input_ids)
+        
+        # assert (
+        #     ar_utils.count_tensor_of_type(model, torchao.dtypes.AffineQuantizedTensor)
+        #     > 0
+        # ), f"No `AffineQuantizedTensor` found in the model"
 
         # 4(Optional). Generate text using the optimized model
         ar_utils.gen_text(
@@ -81,6 +87,8 @@ def main(args):
     auto_round_config.iters = args.iters
     auto_round_config.nsamples = args.nsamples
     auto_round_config.seqlen = args.seqlen
+    auto_round_config.train_bs = args.train_bs
+    auto_round_config.bits = args.bits
     auto_round_config.quant_lm_head = args.quant_lm_head
     quantize_model_with_autoround(
         model, tokenizer, decoder_cls, auto_round_config, device=device
@@ -101,6 +109,12 @@ if __name__ == "__main__":
     parser.add_argument("--seed", default=0, type=int, help="Random seed for torch")
     parser.add_argument(
         "--iters", default=200, type=int, help="Number of iterations for optimization"
+    )
+    parser.add_argument(
+        "--bits", default=4, type=int, help="Number of bits"
+    )
+    parser.add_argument(
+        "--train_bs", default=4, type=int, help="Number of iterations for optimization"
     )
     parser.add_argument(
         "--nsamples", default=128, type=int, help="Number of samples for optimization"

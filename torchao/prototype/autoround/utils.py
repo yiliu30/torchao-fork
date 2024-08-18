@@ -127,3 +127,55 @@ def dump_elapsed_time(customized_msg=""):
         return fi
 
     return f
+
+def get_tokenizer_function(tokenizer, seqlen):
+    def default_tokenizer_function(examples):
+        example = tokenizer(examples["text"], truncation=True, max_length=seqlen)
+        return example
+
+    return default_tokenizer_function
+
+
+
+def get_dataloader_v1(
+    tokenizer,
+    seqlen=1024,
+    dataset_name="NeelNanda/pile-10k",
+    split="train",
+    seed=42,
+    batch_size=4,
+    nsamples=128,
+    
+):
+    from datasets import load_dataset
+    from torch.utils.data import DataLoader
+
+    tokenizer_function = get_tokenizer_function(tokenizer, seqlen)
+
+    @torch.no_grad()
+    def collate_batch(batch):
+        input_ids_new = []
+        for text in batch:
+            input_ids = text["input_ids"]
+            if input_ids.shape[0] < seqlen:
+                continue
+            input_ids = input_ids[:seqlen]
+            input_ids_list = input_ids.tolist()
+            if input_ids_list.count(input_ids_list[-1]) > seqlen // 2:
+                continue
+            input_ids_new.append(input_ids)
+        # TODO: need to handle the case where all input_ids are empty
+        if len(input_ids_new) == 0:
+            return None
+        tmp = torch.vstack(input_ids_new)
+        res = {"input_ids": tmp}
+        return res
+    split = split + f"[0:{nsamples}]"
+    calib_dataset = load_dataset(dataset_name, split=split)
+    calib_dataset = calib_dataset.shuffle(seed=seed)
+    calib_dataset = calib_dataset.map(tokenizer_function, batched=True)
+    calib_dataset.set_format(type="torch", columns=["input_ids"])
+    calib_dataloader = DataLoader(
+        calib_dataset, batch_size=batch_size, shuffle=False, collate_fn=collate_batch
+    )
+    return calib_dataloader
