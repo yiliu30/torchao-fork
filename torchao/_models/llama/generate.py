@@ -144,8 +144,7 @@ def encode_tokens(tokenizer, string, bos=True, device=default_device):
     return torch.tensor(tokens, dtype=torch.int, device=device)
 
 def _load_model(checkpoint_path, device, precision):
-    # checkpoint = torch.load(str(checkpoint_path), mmap=True, weights_only=True)
-    checkpoint = torch.load(str(checkpoint_path),weights_only=True)
+    checkpoint = torch.load(str(checkpoint_path), mmap=True, weights_only=True)
     if "model" in checkpoint and "stories" in str(checkpoint_path):
         checkpoint = checkpoint["model"]
 
@@ -232,9 +231,12 @@ def main(
             auto_round_config.train_bs = 1
             auto_round_config.iters = 200
             auto_round_config.nsamples = 128
+            auto_round_config.quant_lm_head = False
+            print(auto_round_config)
             model.set_caches_for_calib(max_seq_length=auto_round_config.seqlen, max_batch_size=auto_round_config.train_bs)
             quantize_model_with_autoround(model, tokenizer=_tokenizer, decoder_cls=TransformerBlock, auto_round_config=auto_round_config, device="cuda", gen_text=False)
             model.clean_caches_for_calib()
+
         if "autoquant" == quantization:
             model = autoquant(model, manual=True)
 
@@ -337,7 +339,7 @@ def main(
         tokens_generated = y.size(0) - prompt_length
         tokens_sec = tokens_generated / t
         aggregate_metrics['tokens_per_sec'].append(tokens_sec)
-        print(f"Time for inference {i + 1}: {t:.02f} sec total, {tokens_sec:.02f} tokens/sec")
+        print(f"Time for inference {i + 1}: {tokens_generated} tokens, {t:.02f} sec total, {tokens_sec:.02f} tokens/sec")
         print(f"Bandwidth achieved: {model_size * tokens_sec:.02f} GB/s")
     print("==========")
 
