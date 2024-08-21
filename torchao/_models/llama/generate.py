@@ -225,17 +225,21 @@ def main(
             from torchao.prototype.autoround.core import auto_round_config
             import torchao.prototype.autoround.utils as ar_utils
             from transformers import AutoTokenizer
+            from torchao.prototype.autoround.multi_tensor import multi_tensor_config
+            multi_tensor_config.offload_device = "cpu"
+            # TODO(Yi): Load the tokenizer withouth the HF tokenizer
             _tokenizer = AutoTokenizer.from_pretrained(checkpoint_path.parent)
-            model = model.to(device)
+            model = model.to(multi_tensor_config.offload_device)
             # TODO: Enable other `train_bs`
             auto_round_config.train_bs = 1
             auto_round_config.iters = 200
             auto_round_config.nsamples = 128
-            auto_round_config.quant_lm_head = False
+            auto_round_config.quant_lm_head = True
             print(auto_round_config)
             model.set_caches_for_calib(max_seq_length=auto_round_config.seqlen, max_batch_size=auto_round_config.train_bs)
             quantize_model_with_autoround(model, tokenizer=_tokenizer, decoder_cls=TransformerBlock, auto_round_config=auto_round_config, device="cuda", gen_text=False)
             model.clean_caches_for_calib()
+            model = model.to(device)
 
         if "autoquant" == quantization:
             model = autoquant(model, manual=True)
