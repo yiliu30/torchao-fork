@@ -237,7 +237,10 @@ def main(
             auto_round_config.quant_lm_head = True
             print(auto_round_config)
             model.set_caches_for_calib(max_seq_length=auto_round_config.seqlen, max_batch_size=auto_round_config.train_bs)
-            quantize_model_with_autoround(model, tokenizer=_tokenizer, decoder_cls=TransformerBlock, auto_round_config=auto_round_config, device="cuda", gen_text=False)
+            is_decoder = (
+                    lambda mod, fqn: isinstance(mod, TransformerBlock) or "output" in fqn
+                )
+            quantize_model_with_autoround(model, tokenizer=_tokenizer, decoder_cls=TransformerBlock, auto_round_config=auto_round_config, device="cuda", gen_text=False, is_decoder=is_decoder)
             model.clean_caches_for_calib()
             model = model.to(device)
 
