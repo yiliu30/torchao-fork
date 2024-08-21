@@ -11,7 +11,7 @@ from torchao.dtypes import TensorCoreTiledLayoutType, to_affine_quantized_static
 from torchao.prototype.autoround.multi_tensor import multi_tensor_config, MultiTensor
 from torchao.quantization.quant_primitives import ZeroPointDomain
 from torchao.utils import find_multiple
-
+import logging
 # TODO: remove it before merge
 ar_utils.freeze_random()
 
@@ -156,6 +156,7 @@ layer_idx = 0
 def apply_auto_round(block, grouped_args, spec, block_outputs):
     # Call the auto-round to execute the optimization process
     import auto_round
+    
 
     block = block.to(multi_tensor_config.accelerator_device)
     global layer_idx

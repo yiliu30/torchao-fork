@@ -13,7 +13,7 @@ from torchao.prototype.autoround.multi_tensor import multi_tensor_config, MultiT
 
 
 def quantize_model_with_autoround(
-    model, tokenizer, decoder_cls, auto_round_config=auto_round_config, device="cuda"
+    model, tokenizer, decoder_cls, auto_round_config=auto_round_config, device="cuda", gen_text=True, is_decoder=None
 ):
     with torch.no_grad():
         # 0. Get the model, tokenizer, and decoder_cls
@@ -23,12 +23,13 @@ def quantize_model_with_autoround(
         # User should provide the `is_decoder` function for identifying the decoder block
         # It can be extended to other modules, such as `lm_head`, the function like:
         #   is_target_module = lambda mod, fqn: isinstance(mod, decoder_cls) or "lm_head" in fqn
-        if auto_round_config.quant_lm_head:
-            is_decoder = (
-                lambda mod, fqn: isinstance(mod, decoder_cls) or "lm_head" in fqn
-            )
-        else:
-            is_decoder = lambda mod, fqn: isinstance(mod, decoder_cls)
+        if is_decoder is None:
+            if auto_round_config.quant_lm_head:
+                is_decoder = (
+                    lambda mod, fqn: isinstance(mod, decoder_cls) or "lm_head" in fqn
+                )
+            else:
+                is_decoder = lambda mod, fqn: isinstance(mod, decoder_cls)
 
         prepare_model_for_applying_auto_round_(model, is_decoder)
 
@@ -63,11 +64,13 @@ def quantize_model_with_autoround(
             model, torchao.dtypes.AffineQuantizedTensor
         )
         print(f"Number of quantized weight: {num_quantized_weight}")
+        
 
         # 4(Optional). Generate text using the optimized model
-        ar_utils.gen_text(
-            model, tokenizer, "Quantized model", device="cuda", max_length=50
-        )
+        if gen_text:
+            ar_utils.gen_text(
+                model, tokenizer, "Quantized model", device="cuda", max_length=50
+            )
         return model
 
 
@@ -114,7 +117,7 @@ if __name__ == "__main__":
         "--iters", default=200, type=int, help="Number of iterations for optimization"
     )
     parser.add_argument(
-        "--bits", default=3, type=int, help="Number of bits for quantization"
+        "--bits", default=4, type=int, help="Number of bits for quantization"
     )
     parser.add_argument(
         "--train_bs", default=4, type=int, help="Batch size for training"
