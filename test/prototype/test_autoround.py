@@ -85,6 +85,8 @@ class TestAutoRound(TestCase):
             if isinstance(l, torch.nn.Linear):
                 assert isinstance(l.weight, AffineQuantizedTensor)
         after_quant = m(*example_inputs)
+        amaxdiff = torch.max(torch.abs(before_quant - after_quant))
+        print(f"amaxdiff: {amaxdiff}")
         assert after_quant is not None, "Quantized model forward pass failed"
 
 

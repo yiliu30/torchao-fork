@@ -1,6 +1,6 @@
 import dataclasses
 import logging
-from typing import Callable, Dict, Optional, Tuple
+from typing import Callable, Dict, Optional, Tuple, Any
 
 import torch
 from torch.utils._pytree import tree_flatten, tree_unflatten
@@ -53,10 +53,10 @@ def prepare_model_for_applying_auto_round_(
     def forward_hook(
         module,
         args: Tuple[MultiTensor],
-        kwargs: Dict[str, MultiTensor],
-        output: Tuple[MultiTensor],
+        kwargs: Dict[str, Any],
+        output: Any,
     ):
-        apply_auto_round_optimization(
+        output = apply_auto_round_optimization(
             module, args, kwargs, output, config=_auto_round_config
         )
         return output
@@ -196,7 +196,7 @@ def apply_auto_round():
 
 @torch.no_grad()
 def _apply_auto_round_optimization(
-    block, grouped_args, spec, block_outputs, config: _AutoRoundConfig
+    block, block_inputs, block_outputs, config: _AutoRoundConfig
 ):
     # Call the auto-round to execute the optimization process.
     # https://github.com/intel/auto-round/tree/patch-for-ao-2
@@ -231,15 +231,12 @@ def _apply_auto_round_optimization(
         model_dtype=next(block.parameters()).dtype,
     )
 
-    @torch.no_grad()
-    def _unflatten_grouped_args(grouped_args, spec):
-        inputs = []
-        for inp in grouped_args:
-            cur_args, cur_kwargs = tree_unflatten(inp, spec)
-            inputs.append((cur_args, cur_kwargs))
-        return inputs
 
-    block_inputs = _unflatten_grouped_args(grouped_args, spec)
+    # hook:
+    # args: Tuple[MultiTensor]
+    # kwargs: Dict[Str, Any]
+    # block_inputs: [(args_1, kwargs_1), (args_2, kwargs_2), ...]
+    # block_outputs: [(output_1, output_2, ...), ...]
     with torch.enable_grad():
         rounder.quant_block_v2_(
             block,
@@ -254,16 +251,29 @@ def _apply_auto_round_optimization(
 def apply_auto_round_optimization(
     module: torch.nn.Module,
     args: Tuple[MultiTensor],
-    kwargs: Dict[str, MultiTensor],
-    output: Tuple[MultiTensor],
+    kwargs: Dict[str, Any],
+    output: Any,
     config: _AutoRoundConfig,
 ):
     # Remove the hook to avoid recursive calls
     module._forward_hook_handle_for_auto_round.remove()
     flat_args, spec = tree_flatten((args, kwargs))
     grouped_args = MultiTensor.flat_to_grouped(flat_args)
+
+    @torch.no_grad()
+    def _unflatten_grouped_args(grouped_args, spec):
+        inputs = []
+        for inp in grouped_args:
+            cur_args, cur_kwargs = tree_unflatten(inp, spec)
+            inputs.append((cur_args, cur_kwargs))
+        return inputs
+    block_inputs = _unflatten_grouped_args(grouped_args, spec)
+    
     output_flat_args, output_spec = tree_flatten((output, {}))
-    output_grouped_args = MultiTensor.flat_to_grouped(output_flat_args)
+    block_outputs = MultiTensor.flat_to_grouped(output_flat_args)
     _apply_auto_round_optimization(
-        module, grouped_args, spec, output_grouped_args, config
+        module, block_inputs, block_outputs, config
     )
+    # Optimized module
+    new_output = module(*args, **kwargs)
+    return new_output
