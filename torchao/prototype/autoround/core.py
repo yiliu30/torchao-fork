@@ -266,7 +266,7 @@ def apply_auto_round_optimization(
 ):
     # Remove the hook to avoid recursive calls
     module._forward_hook_handle_for_auto_round.remove()
-    
+
     block_inputs = MultiTensor.revert_to_tensor_pairs(args, kwargs)
     block_outputs = MultiTensor.revert_to_tensor_pairs(output)
 

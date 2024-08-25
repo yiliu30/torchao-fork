@@ -110,9 +110,9 @@ class MultiTensor(torch.Tensor):
             ]
         )
         return flattened, non_tensors_equal
-    
+
     @classmethod
-    def revert_to_tensor_pairs(cls, args, kwargs = None):
+    def revert_to_tensor_pairs(cls, args, kwargs=None):
         if kwargs is None:
             kwargs = {}
         # combine args and kwargs and remove lists and tuples
@@ -131,7 +131,7 @@ class MultiTensor(torch.Tensor):
         # run function for each of the multitensors and return a multitensor
         outputs = []
         with torch._C.DisableTorchFunctionSubclass():
-            for (cur_args, cur_kwargs) in args_kwargs_pairs:
+            for cur_args, cur_kwargs in args_kwargs_pairs:
                 if func in _multi_tensor_config.ops_to_accelerate:
                     device = _multi_tensor_config.device
                     cur_args = [

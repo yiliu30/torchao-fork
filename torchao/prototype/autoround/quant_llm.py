@@ -29,7 +29,7 @@ def quantize_model_with_autoround_(
     nsamples: int = 128,
 ):
     # Step 1. Prepare the model for applying auto-round
-    
+
     model_device = next(model.parameters()).device
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -169,5 +169,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
     main(args)
 
-# p autoround_demo.py --model_device cpu
-# p autoround_demo.py --model_device cuda
+# p quant_llm.py --model_device cpu
+# p quant_llm.py --model_device cuda
