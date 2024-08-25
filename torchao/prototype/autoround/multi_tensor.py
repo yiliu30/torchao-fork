@@ -16,6 +16,7 @@ class _MultiTensorConfig:
             torch.nn.functional.scaled_dot_product_attention,
         ]
     )
+    offload: bool = False
 
 
 # Note: As the `MultiTensor` includes a list of tensors, during the calibration stage,
@@ -124,14 +125,6 @@ class MultiTensor(torch.Tensor):
         with torch._C.DisableTorchFunctionSubclass():
             for i, inp in enumerate(grouped_args):
                 cur_args, cur_kwargs = tree_unflatten(inp, spec)
-                cur_arg_device_name = (
-                    ["cpu"]
-                    + [
-                        arg.device.type
-                        for arg in cur_args
-                        if isinstance(arg, torch.Tensor)
-                    ]
-                )[-1]
                 if func in _multi_tensor_config.ops_to_accelerate:
                     accelerator_name = _multi_tensor_config.accelerator_name
                     cur_args = [
@@ -149,9 +142,7 @@ class MultiTensor(torch.Tensor):
                         for k, v in cur_kwargs.items()
                     }
                 out = func(*cur_args, **cur_kwargs)
-                # If the `accelerator_name` is `cuda` and the current argument device name is `cpu`,
-                # we offload the computation results to the GPU.
-                offload = _multi_tensor_config.accelerator_name != cur_arg_device_name
+                offload = _multi_tensor_config.offload
                 outputs.append(
                     out.to("cpu") if isinstance(out, torch.Tensor) and offload else out
                 )

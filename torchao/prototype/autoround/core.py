@@ -1,6 +1,6 @@
 import dataclasses
 import logging
-from typing import Callable, Dict, Optional, Tuple, Any
+from typing import Any, Callable, Dict, Optional, Tuple
 
 import torch
 from torch.utils._pytree import tree_flatten, tree_unflatten
@@ -45,6 +45,7 @@ def prepare_model_for_applying_auto_round_(
 ):
 
     _multi_tensor_config.accelerator_name = device
+    _multi_tensor_config.offload = device != next(model.parameters()).device.type
 
     _auto_round_config.bits = bits
     _auto_round_config.group_size = group_size
@@ -218,7 +219,7 @@ def _apply_auto_round_optimization(
         _optimization_tracker.num_layers,
     )
 
-    # Start the training process to update the v, alpha and betta.
+    # Start the training process to update the v, alpha and beta.
     rounder = auto_round.AutoRound(
         model=block,
         tokenizer=None,
@@ -226,11 +227,9 @@ def _apply_auto_round_optimization(
         bits=config.bits,
         iters=config.iters,
         group_size=config.group_size,
-        use_quant_input=False,  # disable it for now
         amp=True,
         model_dtype=next(block.parameters()).dtype,
     )
-
 
     # hook:
     # args: Tuple[MultiTensor]
@@ -244,6 +243,7 @@ def _apply_auto_round_optimization(
             outputs=block_outputs,
             device=_multi_tensor_config.accelerator_name,
         )
+    block.to("cpu")
 
 
 @ar_utils.dump_elapsed_time()
@@ -267,13 +267,12 @@ def apply_auto_round_optimization(
             cur_args, cur_kwargs = tree_unflatten(inp, spec)
             inputs.append((cur_args, cur_kwargs))
         return inputs
+
     block_inputs = _unflatten_grouped_args(grouped_args, spec)
-    
+
     output_flat_args, output_spec = tree_flatten((output, {}))
     block_outputs = MultiTensor.flat_to_grouped(output_flat_args)
-    _apply_auto_round_optimization(
-        module, block_inputs, block_outputs, config
-    )
+    _apply_auto_round_optimization(module, block_inputs, block_outputs, config)
     # Optimized module
     new_output = module(*args, **kwargs)
     return new_output

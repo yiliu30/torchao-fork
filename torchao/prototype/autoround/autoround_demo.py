@@ -79,7 +79,7 @@ def quantize_model_with_autoround_(
     out = model(multi_t_input_ids, multi_t_attn_mask)
 
     # Step 3. Apply the quantization
-    quantize_(model, apply_auto_round(), is_target_module)
+    quantize_(model, apply_auto_round(), is_target_module, device="cuda")
 
     num_quantized_weight = ar_utils.count_tensor_of_type(
         model, torchao.dtypes.AffineQuantizedTensor

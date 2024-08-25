@@ -58,6 +58,7 @@ def main(args):
         model.config.use_cache = False
         msg = "Float-model" if args.eval_float_model else "Quantized-model"
         if not args.eval_float_model:
+
             # Evaluate the quantized model
             if args.woq_int4:
                 msg += " (int4wo)"
@@ -210,7 +211,10 @@ if __name__ == "__main__" and TORCH_VERSION_AT_LEAST_2_5 and torch.cuda.is_avail
 
     main(args)
 
+
+
 # export MODEL_REPO=meta-llama/Llama-2-7b-chat-hf
+# export MODEL_REPO=/models/Llama-2-7b-chat-hf/
 # python benchmark_autoround.py -m $MODEL_REPO
 # python benchmark_autoround.py -m $MODEL_REPO --woq_int4
 # python benchmark_autoround.py -m $MODEL_REPO --uintx --bits 2
@@ -220,4 +224,4 @@ if __name__ == "__main__" and TORCH_VERSION_AT_LEAST_2_5 and torch.cuda.is_avail
 # python benchmark_autoround.py -m $MODEL_REPO
 # python benchmark_autoround.py -m $MODEL_REPO --woq_int4
 # python benchmark_autoround.py -m $MODEL_REPO --uintx --bits 2
-# python benchmark_autoround.py -m $MODEL_REPO  --model_device cpu   --speedup_optimization
+# python benchmark_autoround.py -m /models/Meta-Llama-3.1-8B-Instruct/  --model_device cpu   --speedup_optimization --train_bs 8
