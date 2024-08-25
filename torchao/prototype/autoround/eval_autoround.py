@@ -90,7 +90,7 @@ def main(args):
             else:
                 msg += f" (auto-round {args.bits} bits)"
                 torch.cuda.empty_cache()
-                from torchao.prototype.autoround.autoround_demo import (
+                from torchao.prototype.autoround.autoround_llm import (
                     quantize_model_with_autoround_,
                 )
                 # User need to prepare a `is_target_module` function for identifying the target modules that need to be quantized.

@@ -222,7 +222,7 @@ def main(
             quantize_(model, int4_weight_only(group_size=groupsize))
 
         if "autoround" in quantization:
-            from torchao.prototype.autoround.autoround_demo import quantize_model_with_autoround_
+            from torchao.prototype.autoround.autoround_llm import quantize_model_with_autoround_
             from transformers import AutoTokenizer
             _tokenizer = AutoTokenizer.from_pretrained(checkpoint_path.parent)
             # parse args from quantization string, autoround-<iters>-<groupsize>-<quant_lm_head>-<batch_size>-<seqlen>-<model_device>
