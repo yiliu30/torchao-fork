@@ -24,7 +24,6 @@ def quantize_model_with_autoround_(
     group_size: int = 128,
     iters: int = 200,
     quant_lm_head: bool = False,
-    speedup_optimization: bool = True,
     seqlen: int = 2048,
     dataset_name: str = "NeelNanda/pile-10k",
     bs: int = 4,
@@ -39,12 +38,7 @@ def quantize_model_with_autoround_(
     else:
         is_target_module = lambda mod, fqn: isinstance(mod, decoder_cls)
     model_device = next(model.parameters()).device
-    device = (
-        "cuda"
-        if (model_device.type == "cuda")
-        or (speedup_optimization and torch.cuda.is_available())
-        else "cpu"
-    )
+    device = "cuda" if torch.cuda.is_available() else "cpu"
 
     prepare_model_for_applying_auto_round_(
         model,
@@ -108,7 +102,6 @@ def main(args):
         bits=args.bits,
         iters=args.iters,
         quant_lm_head=args.quant_lm_head,
-        speedup_optimization=args.speedup_optimization,
         seqlen=args.seqlen,
         dataset_name=args.dataset_name,
         bs=args.train_bs,
@@ -148,7 +141,7 @@ if __name__ == "__main__":
         "--bits", default=4, type=int, help="Number of bits for quantization"
     )
     parser.add_argument(
-        "--train_bs", default=4, type=int, help="Batch size for auto-round optimization"
+        "--train_bs", default=8, type=int, help="Batch size for auto-round optimization"
     )
     parser.add_argument(
         "--nsamples",
@@ -176,12 +169,8 @@ if __name__ == "__main__":
         choices=["cpu", "cuda"],
         help="Device for loading the float model",
     )
-    parser.add_argument(
-        "-s",
-        "--speedup_optimization",
-        default=False,
-        action="store_true",
-        help="Load the compute-intensive operations to GPU for acceleration",
-    )
     args = parser.parse_args()
     main(args)
+
+# p autoround_demo.py --model_device cpu
+# p autoround_demo.py --model_device cuda

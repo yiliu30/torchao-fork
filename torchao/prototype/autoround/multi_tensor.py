@@ -7,7 +7,7 @@ from torch.utils._pytree import tree_flatten, tree_unflatten
 
 @dataclasses.dataclass
 class _MultiTensorConfig:
-    accelerator_name: bool = False
+    device: str = "cuda" if torch.cuda.is_available() else "cpu"
     ops_to_accelerate: List[str] = dataclasses.field(
         default_factory=lambda: [
             torch.nn.functional.linear,
@@ -16,15 +16,14 @@ class _MultiTensorConfig:
             torch.nn.functional.scaled_dot_product_attention,
         ]
     )
+    offload: bool = False
 
 
 # Note: As the `MultiTensor` includes a list of tensors, during the calibration stage,
 # placing all output tensors on the GPU would consume a significant amount of GPU memory.
 # This is especially true for models with a large `lm-head`, such as Llama-3.1.
 # In these cases, we load the model onto the CPU and only transfer tensors to the GPU for compute-intensive operations.
-_multi_tensor_config = _MultiTensorConfig(
-    accelerator_name="cuda" if torch.cuda.is_available() else "cpu"
-)
+_multi_tensor_config = _MultiTensorConfig()
 
 
 class MultiTensor(torch.Tensor):
@@ -124,34 +123,18 @@ class MultiTensor(torch.Tensor):
         with torch._C.DisableTorchFunctionSubclass():
             for i, inp in enumerate(grouped_args):
                 cur_args, cur_kwargs = tree_unflatten(inp, spec)
-                cur_arg_device_name = (
-                    ["cpu"]
-                    + [
-                        arg.device.type
-                        for arg in cur_args
-                        if isinstance(arg, torch.Tensor)
-                    ]
-                )[-1]
                 if func in _multi_tensor_config.ops_to_accelerate:
-                    accelerator_name = _multi_tensor_config.accelerator_name
+                    device = _multi_tensor_config.device
                     cur_args = [
-                        (
-                            arg.to(accelerator_name)
-                            if isinstance(arg, torch.Tensor)
-                            else arg
-                        )
+                        (arg.to(device) if isinstance(arg, torch.Tensor) else arg)
                         for arg in cur_args
                     ]
                     cur_kwargs = {
-                        k: (
-                            v.to(accelerator_name) if isinstance(v, torch.Tensor) else v
-                        )
+                        k: (v.to(device) if isinstance(v, torch.Tensor) else v)
                         for k, v in cur_kwargs.items()
                     }
                 out = func(*cur_args, **cur_kwargs)
-                # If the `accelerator_name` is `cuda` and the current argument device name is `cpu`,
-                # we offload the computation results to the GPU.
-                offload = _multi_tensor_config.accelerator_name != cur_arg_device_name
+                offload = _multi_tensor_config.offload
                 outputs.append(
                     out.to("cpu") if isinstance(out, torch.Tensor) and offload else out
                 )
