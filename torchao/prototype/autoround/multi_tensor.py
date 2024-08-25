@@ -22,7 +22,7 @@ class _MultiTensorConfig:
 # Note: As the `MultiTensor` includes a list of tensors, during the calibration stage,
 # placing all output tensors on the GPU would consume a significant amount of GPU memory.
 # This is especially true for models with a large `lm-head`, such as Llama-3.1.
-# In these cases, we load the model onto the CPU and only transfer tensors to the GPU for compute-intensive operations.
+# In these cases, we load the model onto the DRAM and only transfer tensors to the GPU for compute-intensive operations.
 _multi_tensor_config = _MultiTensorConfig()
 
 
@@ -110,19 +110,28 @@ class MultiTensor(torch.Tensor):
             ]
         )
         return flattened, non_tensors_equal
-
+    
     @classmethod
-    def __torch_function__(cls, func, types, args=(), kwargs=None):
-        kwargs = {} if kwargs is None else kwargs
+    def revert_to_tensor_pairs(cls, args, kwargs = None):
+        if kwargs is None:
+            kwargs = {}
         # combine args and kwargs and remove lists and tuples
         flat_args, spec = tree_flatten((args, kwargs))
         # convert [A, MultiTensor(b1,b2,b3), MultiTensor(c1,c2,c3)] => [[A,b1,c1], [A,b2,c2] [A,b3,c3]]
         grouped_args = cls.flat_to_grouped(flat_args)
+        args_kwargs_pairs = []
+        for i, inp in enumerate(grouped_args):
+            cur_args, cur_kwargs = tree_unflatten(inp, spec)
+            args_kwargs_pairs.append((cur_args, cur_kwargs))
+        return args_kwargs_pairs
+
+    @classmethod
+    def __torch_function__(cls, func, types, args=(), kwargs=None):
+        args_kwargs_pairs = cls.revert_to_tensor_pairs(args, kwargs)
         # run function for each of the multitensors and return a multitensor
         outputs = []
         with torch._C.DisableTorchFunctionSubclass():
-            for i, inp in enumerate(grouped_args):
-                cur_args, cur_kwargs = tree_unflatten(inp, spec)
+            for (cur_args, cur_kwargs) in args_kwargs_pairs:
                 if func in _multi_tensor_config.ops_to_accelerate:
                     device = _multi_tensor_config.device
                     cur_args = [

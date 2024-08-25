@@ -23,6 +23,7 @@ class _AutoRoundConfig:
     bits: int = 4
     group_size: int = 128
     iters: int = 200
+    use_optimized_layer_output: bool = True
 
 
 _auto_round_config = _AutoRoundConfig()
@@ -49,6 +50,7 @@ def prepare_model_for_applying_auto_round_(
     bits: int = 4,
     group_size: int = 128,
     iters: int = 200,
+    use_optimized_layer_output: bool = True,
     device: Optional[torch.types.Device] = None,
 ):
 
@@ -59,6 +61,7 @@ def prepare_model_for_applying_auto_round_(
     _auto_round_config.bits = bits
     _auto_round_config.group_size = group_size
     _auto_round_config.iters = iters
+    _auto_round_config.use_optimized_layer_output = use_optimized_layer_output
 
     def forward_hook(
         module,
@@ -234,7 +237,7 @@ def _apply_auto_round_optimization(
     rounder = auto_round.AutoRound(
         model=block,
         tokenizer=None,
-        sym=False,  # Both `True` and `False` are OK, but use `asym` by default for using the `tinygemm` by default
+        sym=False,
         bits=config.bits,
         iters=config.iters,
         group_size=config.group_size,
@@ -242,11 +245,6 @@ def _apply_auto_round_optimization(
         model_dtype=next(block.parameters()).dtype,
     )
 
-    # hook:
-    # args: Tuple[MultiTensor]
-    # kwargs: Dict[Str, Any]
-    # block_inputs: [(args_1, kwargs_1), (args_2, kwargs_2), ...]
-    # block_outputs: [(output_1, output_2, ...), ...]
     with torch.enable_grad():
         rounder.quant_block_v2_(
             block,
@@ -268,21 +266,12 @@ def apply_auto_round_optimization(
 ):
     # Remove the hook to avoid recursive calls
     module._forward_hook_handle_for_auto_round.remove()
-    flat_args, spec = tree_flatten((args, kwargs))
-    grouped_args = MultiTensor.flat_to_grouped(flat_args)
+    
+    block_inputs = MultiTensor.revert_to_tensor_pairs(args, kwargs)
+    block_outputs = MultiTensor.revert_to_tensor_pairs(output)
 
-    def _unflatten_grouped_args(grouped_args, spec):
-        inputs = []
-        for inp in grouped_args:
-            cur_args, cur_kwargs = tree_unflatten(inp, spec)
-            inputs.append((cur_args, cur_kwargs))
-        return inputs
-
-    block_inputs = _unflatten_grouped_args(grouped_args, spec)
-
-    output_flat_args, output_spec = tree_flatten((output, {}))
-    block_outputs = MultiTensor.flat_to_grouped(output_flat_args)
     _apply_auto_round_optimization(module, block_inputs, block_outputs, config)
     # Get the new output of the optimized model
-    new_output = module(*args, **kwargs)
-    return new_output
+    if config.use_optimized_layer_output:
+        output = module(*args, **kwargs)
+    return output
