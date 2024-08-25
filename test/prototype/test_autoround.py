@@ -55,7 +55,7 @@ def _is_two_linear(mod, fqn):
 
 class TestAutoRound(TestCase):
 
-    @pytest.mark.skip(not TORCH_VERSION_AT_LEAST_2_5, "Requires torch 2.5 or later")
+    @pytest.mark.skipif(not TORCH_VERSION_AT_LEAST_2_5, "Requires torch 2.5 or later")
     @parametrize("device", _AVAILABLE_DEVICES)
     @torch.no_grad()
     def test_auto_round(self, device: str):
@@ -82,13 +82,11 @@ class TestAutoRound(TestCase):
         mt_input1 = MultiTensor(input1)
         mt_input2 = MultiTensor(input2)
         out = m(mt_input1, mt_input2)
-        quantize_(m, apply_auto_round(), _is_two_linear)
+        quantize_(m, apply_auto_round(), _is_two_linear, device=device)
         for l in m.modules():
             if isinstance(l, torch.nn.Linear):
                 assert isinstance(l.weight, AffineQuantizedTensor)
         after_quant = m(*example_inputs)
-        amaxdiff = torch.max(torch.abs(before_quant - after_quant))
-        print(f"amaxdiff: {amaxdiff}")
         assert after_quant is not None, "Quantized model forward pass failed"
 
 

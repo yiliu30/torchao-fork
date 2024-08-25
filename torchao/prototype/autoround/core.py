@@ -99,7 +99,8 @@ def apply_auto_round():
 
                 pack_dim = -1
                 bit_width = _auto_round_config.bits
-                layout_type = UintxLayoutType(bit_width=bit_width, pack_dim=pack_dim)
+                _dtype = getattr(torch, f"uint{bit_width}")
+                layout_type = UintxLayoutType(dtype=_dtype, pack_dim=pack_dim)
                 return to_affine_quantized_static(
                     input_float=input_float,
                     scale=scale.to(input_float.dtype),
