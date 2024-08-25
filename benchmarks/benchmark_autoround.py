@@ -93,14 +93,21 @@ def main(args):
                 from torchao.prototype.autoround.autoround_demo import (
                     quantize_model_with_autoround_,
                 )
+                # User need to prepare a `is_target_module` function for identifying the target modules that need to be quantized.
+                if args.quant_lm_head:
+                    is_target_module = (
+                        lambda mod, fqn: isinstance(mod, decoder_cls) or "lm_head" in fqn
+                    )
+                else:
+                    is_target_module = lambda mod, fqn: isinstance(mod, decoder_cls)
 
                 model = quantize_model_with_autoround_(
                     model=model,
                     tokenizer=tokenizer,
-                    decoder_cls=decoder_cls,
+                    is_target_module=is_target_module,
                     bits=args.bits,
+                    group_size=args.group_size,
                     iters=args.iters,
-                    quant_lm_head=args.quant_lm_head,
                     seqlen=args.seqlen,
                     bs=args.train_bs,
                     nsamples=args.nsamples,
@@ -135,7 +142,7 @@ if __name__ == "__main__" and TORCH_VERSION_AT_LEAST_2_5 and torch.cuda.is_avail
         "--bits", default=4, type=int, help="Number of bits for quantization"
     )
     parser.add_argument(
-        "--train_bs", default=4, type=int, help="Batch size for auto-round optimization"
+        "--train_bs", default=8, type=int, help="Batch size for auto-round optimization"
     )
     parser.add_argument(
         "--nsamples",
@@ -209,3 +216,5 @@ if __name__ == "__main__" and TORCH_VERSION_AT_LEAST_2_5 and torch.cuda.is_avail
 # python benchmark_autoround.py -m $MODEL_REPO --uintx --bits 2
 # python benchmark_autoround.py -m $MODEL_REPO  --model_device cpu
 # python benchmark_autoround.py -m $MODEL_REPO  --train_bs 8 --tasks wikitext lambada_openai hellaswag winogrande piqa mmlu
+
+# python benchmark_autoround.py -m /models/Meta-Llama-3-8B-Instruct/  --model_device cpu  --train_bs 8 --tasks  wikitext lambada_openai hellaswag winogrande piqa mmlu  &> ./quant_inputs/Meta-Llama-3-8B-Instruct-iters200-4bits-bs8-quantinput
