@@ -1,6 +1,7 @@
 import argparse
 
 import torch
+
 import torchao
 import torchao.prototype.autoround.utils as ar_utils
 import torchao.quantization
@@ -78,11 +79,15 @@ def main(args):
                 )
             elif args.uintx:
                 msg += f" (uintx {args.bits} bits)"
+                from torchao.dtypes.uintx.Uintx import _BIT_WIDTH_TO_DTYPE
                 from torchao.quantization.quant_api import quantize_, uintx_weight_only
 
+                bits = args.bits
+                assert bits in _BIT_WIDTH_TO_DTYPE, f"Invalid bits: {bits}"
+                dtype = _BIT_WIDTH_TO_DTYPE[bits]
                 quantize_(
                     model,
-                    uintx_weight_only(bit_width=args.bits, group_size=args.group_size),
+                    uintx_weight_only(dtype=dtype, group_size=args.group_size),
                     filter_fn=filter_fn,
                     device=model_device,
                 )
@@ -90,17 +95,26 @@ def main(args):
             else:
                 msg += f" (auto-round {args.bits} bits)"
                 torch.cuda.empty_cache()
-                from torchao.prototype.autoround.autoround_demo import (
+                from torchao.prototype.autoround.autoround_llm import (
                     quantize_model_with_autoround_,
                 )
+
+                # User need to prepare a `is_target_module` function for identifying the target modules that need to be quantized.
+                if args.quant_lm_head:
+                    is_target_module = (
+                        lambda mod, fqn: isinstance(mod, decoder_cls)
+                        or "lm_head" in fqn
+                    )
+                else:
+                    is_target_module = lambda mod, fqn: isinstance(mod, decoder_cls)
 
                 model = quantize_model_with_autoround_(
                     model=model,
                     tokenizer=tokenizer,
-                    decoder_cls=decoder_cls,
+                    is_target_module=is_target_module,
                     bits=args.bits,
+                    group_size=args.group_size,
                     iters=args.iters,
-                    quant_lm_head=args.quant_lm_head,
                     seqlen=args.seqlen,
                     bs=args.train_bs,
                     nsamples=args.nsamples,
@@ -135,7 +149,7 @@ if __name__ == "__main__" and TORCH_VERSION_AT_LEAST_2_5 and torch.cuda.is_avail
         "--bits", default=4, type=int, help="Number of bits for quantization"
     )
     parser.add_argument(
-        "--train_bs", default=4, type=int, help="Batch size for auto-round optimization"
+        "--train_bs", default=8, type=int, help="Batch size for auto-round optimization"
     )
     parser.add_argument(
         "--nsamples",
@@ -197,15 +211,3 @@ if __name__ == "__main__" and TORCH_VERSION_AT_LEAST_2_5 and torch.cuda.is_avail
     args = parser.parse_args()
 
     main(args)
-
-# export MODEL_REPO=meta-llama/Llama-2-7b-chat-hf
-# python benchmark_autoround.py -m $MODEL_REPO
-# python benchmark_autoround.py -m $MODEL_REPO --woq_int4
-# python benchmark_autoround.py -m $MODEL_REPO --uintx --bits 2
-
-# export MODEL_REPO=/models/Meta-Llama-3.1-8B-Instruct/
-# python benchmark_autoround.py -m $MODEL_REPO
-# python benchmark_autoround.py -m $MODEL_REPO --woq_int4
-# python benchmark_autoround.py -m $MODEL_REPO --uintx --bits 2
-# python benchmark_autoround.py -m $MODEL_REPO  --model_device cpu
-# python benchmark_autoround.py -m $MODEL_REPO  --train_bs 8 --tasks wikitext lambada_openai hellaswag winogrande piqa mmlu

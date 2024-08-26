@@ -19,24 +19,17 @@ ar_utils.freeze_random(42)
 def quantize_model_with_autoround_(
     model,
     tokenizer,
-    decoder_cls,
+    is_target_module,
     bits: int = 4,
     group_size: int = 128,
     iters: int = 200,
-    quant_lm_head: bool = False,
     seqlen: int = 2048,
     dataset_name: str = "NeelNanda/pile-10k",
-    bs: int = 4,
+    bs: int = 8,
     nsamples: int = 128,
 ):
     # Step 1. Prepare the model for applying auto-round
-    # User need to prepare a `is_target_module` function for identifying the target modules that need to be quantized.
-    if quant_lm_head:
-        is_target_module = (
-            lambda mod, fqn: isinstance(mod, decoder_cls) or "lm_head" in fqn
-        )
-    else:
-        is_target_module = lambda mod, fqn: isinstance(mod, decoder_cls)
+
     model_device = next(model.parameters()).device
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -58,19 +51,16 @@ def quantize_model_with_autoround_(
         nsamples=nsamples,
     )
     input_ids_lst = []
-    attn_mask_lst = []
     for data in dataloader:
         input_ids_lst.append(data["input_ids"].to(model_device))
-        attn_mask_lst.append(data["attention_mask"].to(model_device))
     print(
         f"Number of batches: {len(input_ids_lst)}, shape of all batches: {[inp.shape for inp in input_ids_lst]}"
     )
 
     multi_t_input_ids = MultiTensor(input_ids_lst)
-    multi_t_attn_mask = MultiTensor(attn_mask_lst)
 
     # The optimization is applied during the forward pass
-    out = model(multi_t_input_ids, multi_t_attn_mask)
+    out = model(multi_t_input_ids)
 
     # Step 3. Apply the quantization
     quantize_(model, apply_auto_round(), is_target_module)
@@ -95,13 +85,20 @@ def main(args):
 
     model = model.to(args.model_device)
 
+    # User need to prepare a `is_target_module` function for identifying the target modules that need to be quantized.
+    if args.quant_lm_head:
+        is_target_module = (
+            lambda mod, fqn: isinstance(mod, decoder_cls) or "lm_head" in fqn
+        )
+    else:
+        is_target_module = lambda mod, fqn: isinstance(mod, decoder_cls)
+
     quantize_model_with_autoround_(
         model=model,
         tokenizer=tokenizer,
-        decoder_cls=decoder_cls,
+        is_target_module=is_target_module,
         bits=args.bits,
         iters=args.iters,
-        quant_lm_head=args.quant_lm_head,
         seqlen=args.seqlen,
         dataset_name=args.dataset_name,
         bs=args.train_bs,
@@ -171,6 +168,3 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     main(args)
-
-# p autoround_demo.py --model_device cpu
-# p autoround_demo.py --model_device cuda
