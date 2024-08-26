@@ -1,6 +1,6 @@
 # Auto-Round
 
-Auto-Round is an advanced quantization algorithm designed for low-bit LLM inference. It leverages [sign gradient descent](https://arxiv.org/abs/1905.12938) to fine-tune rounding values and minmax values of weights in just 200 steps. This approach competes impressively with recent methods without introducing any additional inference overhead while using low tuning costs. This module provides the end-to-end examples to quantize floating-point models to low-bit and integration with torchao's `quantize_` API and low-bit kernels.
+Auto-Round is an advanced quantization algorithm designed for low-bit LLM inference. It leverages [sign gradient descent](https://arxiv.org/abs/1905.12938) to fine-tune rounding values and minmax values of weights. This approach competes impressively with recent methods without introducing any additional inference overhead while using low tuning costs. This module provides the end-to-end examples to quantize floating-point models to low-bit and integration with torchao's `quantize_` API and low-bit kernels.
 
 ## Usage
 
@@ -36,7 +36,7 @@ prepare_model_for_applying_auto_round_(
     is_target_module=is_target_module,
     bits=4,
     group_size=128,
-    iters=4,
+    iters=200,
     device=device,
 )
 ```
@@ -56,8 +56,8 @@ multi_t_input_ids = MultiTensor(input_ids_lst)
 out = model(multi_t_input_ids)
 ```
 #### Step 3: Finalize Quantization
-After above two steps, we have got the optimied `zero_point` and `scale`, the we create the `AffineQuantizedTensor` 
-for each quantized weight to select the right low-bits kernel.
+After obtaining optimized `zero_point` and `scale` values, create the `AffineQuantizedTensor` 
+for each target weight to select the right low-bits kernel.
 
 ```python
 from torchao.prototype.autoround.core import apply_auto_round
