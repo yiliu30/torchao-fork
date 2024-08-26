@@ -106,13 +106,12 @@ def apply_auto_round():
                 quant_min = 0
                 quant_max = _auto_round_config.bits**2 - 1
                 block_size = (1, observed_linear.group_size)
-                from torchao.dtypes.uintx.Uintx import UintxLayoutType
+                from torchao.dtypes.uintx.Uintx import UintxLayoutType, _BIT_WIDTH_TO_DTYPE
                 from torchao.quantization.quant_primitives import ZeroPointDomain
-
+                assert _auto_round_config.bits in _BIT_WIDTH_TO_DTYPE, f"Invalid bits: {_auto_round_config.bits}"
+                dtype = _BIT_WIDTH_TO_DTYPE[_auto_round_config.bits]
                 pack_dim = -1
-                bit_width = _auto_round_config.bits
-                _dtype = getattr(torch, f"uint{bit_width}")
-                layout_type = UintxLayoutType(dtype=_dtype, pack_dim=pack_dim)
+                layout_type = UintxLayoutType(dtype=dtype, pack_dim=pack_dim)
                 return to_affine_quantized_static(
                     input_float=input_float,
                     scale=scale.to(input_float.dtype),

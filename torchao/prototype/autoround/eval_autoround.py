@@ -79,10 +79,13 @@ def main(args):
             elif args.uintx:
                 msg += f" (uintx {args.bits} bits)"
                 from torchao.quantization.quant_api import quantize_, uintx_weight_only
-
+                from torchao.dtypes.uintx.Uintx import _BIT_WIDTH_TO_DTYPE
+                bits = args.bits
+                assert bits in _BIT_WIDTH_TO_DTYPE, f"Invalid bits: {bits}"
+                dtype = _BIT_WIDTH_TO_DTYPE[bits]
                 quantize_(
                     model,
-                    uintx_weight_only(bit_width=args.bits, group_size=args.group_size),
+                    uintx_weight_only(dtype=dtype, group_size=args.group_size),
                     filter_fn=filter_fn,
                     device=model_device,
                 )
