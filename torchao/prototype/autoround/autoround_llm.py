@@ -168,6 +168,3 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     main(args)
-
-# p quant_llm.py --model_device cpu
-# p quant_llm.py --model_device cuda

@@ -1,6 +1,7 @@
 import argparse
 
 import torch
+
 import torchao
 import torchao.prototype.autoround.utils as ar_utils
 import torchao.quantization
@@ -78,8 +79,9 @@ def main(args):
                 )
             elif args.uintx:
                 msg += f" (uintx {args.bits} bits)"
-                from torchao.quantization.quant_api import quantize_, uintx_weight_only
                 from torchao.dtypes.uintx.Uintx import _BIT_WIDTH_TO_DTYPE
+                from torchao.quantization.quant_api import quantize_, uintx_weight_only
+
                 bits = args.bits
                 assert bits in _BIT_WIDTH_TO_DTYPE, f"Invalid bits: {bits}"
                 dtype = _BIT_WIDTH_TO_DTYPE[bits]
@@ -96,10 +98,12 @@ def main(args):
                 from torchao.prototype.autoround.autoround_llm import (
                     quantize_model_with_autoround_,
                 )
+
                 # User need to prepare a `is_target_module` function for identifying the target modules that need to be quantized.
                 if args.quant_lm_head:
                     is_target_module = (
-                        lambda mod, fqn: isinstance(mod, decoder_cls) or "lm_head" in fqn
+                        lambda mod, fqn: isinstance(mod, decoder_cls)
+                        or "lm_head" in fqn
                     )
                 else:
                     is_target_module = lambda mod, fqn: isinstance(mod, decoder_cls)
@@ -207,17 +211,3 @@ if __name__ == "__main__" and TORCH_VERSION_AT_LEAST_2_5 and torch.cuda.is_avail
     args = parser.parse_args()
 
     main(args)
-
-# export MODEL_REPO=meta-llama/Llama-2-7b-chat-hf
-# python benchmark_autoround.py -m $MODEL_REPO
-# python benchmark_autoround.py -m $MODEL_REPO --woq_int4
-# python benchmark_autoround.py -m $MODEL_REPO --uintx --bits 2
-
-# export MODEL_REPO=/models/Meta-Llama-3.1-8B-Instruct/
-# python benchmark_autoround.py -m $MODEL_REPO
-# python benchmark_autoround.py -m $MODEL_REPO --woq_int4
-# python benchmark_autoround.py -m $MODEL_REPO --uintx --bits 2
-# python benchmark_autoround.py -m $MODEL_REPO  --model_device cpu
-# python benchmark_autoround.py -m $MODEL_REPO  --train_bs 8 --tasks wikitext lambada_openai hellaswag winogrande piqa mmlu
-
-# python benchmark_autoround.py -m /models/Meta-Llama-3-8B-Instruct/  --model_device cpu  --train_bs 8 --tasks  wikitext lambada_openai hellaswag winogrande piqa mmlu  &> ./quant_inputs/Meta-Llama-3-8B-Instruct-iters200-4bits-bs8-quantinput
