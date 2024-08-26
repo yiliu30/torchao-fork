@@ -67,10 +67,30 @@ quantize_(model, apply_auto_round(), is_target_module)
 
 ## End-to-End Results
 ### [meta-llama/Meta-Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Meta-Llama-3.1-8B-Instruct)
+|                 | Avg.    | Mmlu   | Piqa   | Winogrande | Hellaswag | Lambada_openai |
+| --------------  | ------- | ------ | ------ | ---------- | --------- | -------------- |
+| bf16            | 0.7080  | 0.6783 | 0.8003 | 0.7403     | 0.5910    | 0.7303         |
+| auto-round-4bit | 0.6989  | 0.6566 | 0.7943 | 0.7285     | 0.5856    | 0.7295         |
+| torchao-int4wo  | 0.6883  | 0.6363 | 0.7938 | 0.7348     | 0.5784    | 0.6980          |
 
 ### [meta-llama/Meta-Llama-3-8B-Instruct](https://huggingface.co/meta-llama/Meta-Llama-3-8B-Instruct)
+|                 | Avg.    | Mmlu   | Piqa   | Winogrande | Hellaswag | Lambada_openai |
+| --------------  | ------- | ------ | ------ | ---------- | --------- | -------------- |
+| bf16            | 0.6881 | 0.6389 | 0.7840 | 0.7222     | 0.5772    | 0.7184         |
+| auto-round-4bit | 0.6811 | 0.6218 | 0.7758 | 0.7285     | 0.5694    | 0.7101         |
+| torchao-int4wo  | 0.6728 | 0.5939 | 0.7737 | 0.7222     | 0.5612    | 0.7132         |
+
 
 ### [meta-llama/Llama-2-7b-chat-hf](https://huggingface.co/meta-llama/Llama-2-7b-chat-hf)
+|                 | Avg.    | Mmlu   | Piqa   | Winogrande | Hellaswag | Lambada_openai |
+| --------------  | ------- | ------ | ------ | ---------- | --------- | -------------- |
+| bf16            | 0.6347  | 0.4647 | 0.7644 | 0.6606     | 0.577     | 0.7070         |
+| auto-round-4bit | 0.6335  | 0.4533 | 0.7661 | 0.6685     | 0.5705    | 0.7091         |
+| torchao-int4wo  | 0.6252  | 0.4427 | 0.7617 | 0.6654     | 0.5674    | 0.6889         |
+
+> [!NOTE]
+> `auto-round-4bit` represents the following configuration: `bits=4`, `iters=200`, `seq_len=2048`, `train_bs=8`, `group_size=128`, `use_optimized_layer_output=True` and `quant_lm_head=False`.
+> `torchao-int4wo` represents `int4_weight_only(group_size=128)` and `quant_lm_head=False`.
 
 
 ## Credits
