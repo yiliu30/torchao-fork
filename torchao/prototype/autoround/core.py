@@ -272,8 +272,7 @@ def _apply_auto_round_optimization(
             outputs=block_outputs,
             device=_multi_tensor_config.device,
         )
-    if orig_device_type == "cpu":
-        block.to(orig_device_type)
+    block.to(orig_device_type)
 
 
 @ar_utils.dump_elapsed_time()
