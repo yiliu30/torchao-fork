@@ -244,7 +244,7 @@ def _apply_auto_round_optimization(
                 "Please install it with `pip install git+https://github.com/intel/auto-round.git@patch-for-ao-2`"
             )
         )
-    orig_device = next(block.parameters()).device
+    orig_device_type = next(block.parameters()).device.type
     block = block.to(_multi_tensor_config.device)
     _optimization_tracker.optimized_layers += 1
     logging.warning(
@@ -272,7 +272,8 @@ def _apply_auto_round_optimization(
             outputs=block_outputs,
             device=_multi_tensor_config.device,
         )
-    block.to(orig_device)
+    if orig_device_type == "cpu":
+        block.to(orig_device_type)
 
 
 @ar_utils.dump_elapsed_time()
