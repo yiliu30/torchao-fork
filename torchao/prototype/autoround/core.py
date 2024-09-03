@@ -10,7 +10,6 @@ import torchao.quantization as ao_quant
 from torchao.dtypes import TensorCoreTiledLayoutType, to_affine_quantized_intx_static
 from torchao.prototype.autoround.multi_tensor import (
     _multi_tensor_config,
-    _MultiTensorConfig,
     MultiTensor,
 )
 from torchao.quantization.quant_primitives import ZeroPointDomain
@@ -109,6 +108,10 @@ def prepare_model_for_applying_auto_round_(
     _auto_round_config.group_size = group_size
     _auto_round_config.iters = iters
     _auto_round_config.use_optimized_layer_output = use_optimized_layer_output
+    
+    _auto_round_config.use_optimized_layer_output = False
+    logging.warning(f"Force to use optimized layer output: {_auto_round_config.use_optimized_layer_output}")
+    logging.warning(f"config {_auto_round_config}")
 
     # Wrap the model buffers and parameters with `MultiTensor`
     model = _replace_model_buffers_and_params(model, _tensor_to_multi_tensor)

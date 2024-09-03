@@ -79,7 +79,7 @@ def main(args):
     model, tokenizer, decoder_cls = ar_utils.get_float_model_info(
         model_name_or_path, torch_dtype=torch.bfloat16
     )
-    # Disable the `use_cache` for calibration process, which cause the OOM.
+    # Disable the `use_cache` for calibration stage.
     model.config.use_cache = False
     ar_utils.gen_text(model, tokenizer, "Float model", max_length=50)
 
@@ -104,7 +104,7 @@ def main(args):
         bs=args.train_bs,
         nsamples=args.nsamples,
     )
-    # Revert the `use_cache`
+    # Revert the `use_cache` for generation stage.
     model.config.use_cache = True
 
     # Generate text using the quantized model
