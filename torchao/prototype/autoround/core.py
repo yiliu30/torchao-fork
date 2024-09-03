@@ -8,10 +8,7 @@ from torch.utils._pytree import tree_flatten, tree_unflatten
 import torchao.prototype.autoround.utils as ar_utils
 import torchao.quantization as ao_quant
 from torchao.dtypes import TensorCoreTiledLayoutType, to_affine_quantized_intx_static
-from torchao.prototype.autoround.multi_tensor import (
-    _multi_tensor_config,
-    MultiTensor,
-)
+from torchao.prototype.autoround.multi_tensor import _multi_tensor_config, MultiTensor
 from torchao.quantization.quant_primitives import ZeroPointDomain
 from torchao.utils import find_multiple
 

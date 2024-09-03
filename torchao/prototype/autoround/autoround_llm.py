@@ -1,4 +1,5 @@
 import argparse
+import logging
 
 import torch
 
@@ -11,7 +12,7 @@ from torchao.prototype.autoround.core import (
 )
 from torchao.prototype.autoround.multi_tensor import MultiTensor
 from torchao.quantization import quantize_
-import logging
+
 ar_utils.freeze_random(42)
 
 

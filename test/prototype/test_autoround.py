@@ -70,19 +70,19 @@ class M2(torch.nn.Module):
     def __init__(self, DIM=128):
         super().__init__()
         self.m1 = ModelWithInplaceOp(DIM)
-        self.m2  = ModelWithInplaceOp(DIM)
-        
+        self.m2 = ModelWithInplaceOp(DIM)
+
     def forward(self, x, idx):
         x = self.m1(x, idx)
         x = self.m2(x, idx)
         return x
-    
-    
-    
 
 
 def _check_params_and_buffers_type(module, check_fun):
-    return [check_fun(p) for p in module.parameters()] + [check_fun(b) for b in module.buffers()]
+    return [check_fun(p) for p in module.parameters()] + [
+        check_fun(b) for b in module.buffers()
+    ]
+
 
 class TestAutoRound(TestCase):
 
@@ -104,9 +104,9 @@ class TestAutoRound(TestCase):
             iters=20,
             device=device,
         )
-        assert all(_check_params_and_buffers_type(m, lambda x: isinstance(x, MultiTensor))), (
-            "Expected all parameters and buffers to be `MultiTensor`."
-        )
+        assert all(
+            _check_params_and_buffers_type(m, lambda x: isinstance(x, MultiTensor))
+        ), "Expected all parameters and buffers to be `MultiTensor`."
         input1 = []
         input2 = []
         for _ in range(10):
@@ -117,9 +117,9 @@ class TestAutoRound(TestCase):
         mt_input2 = MultiTensor(input2)
         out = m(mt_input1, mt_input2)
         assert isinstance(out, MultiTensor), f"Expected MultiTensor, got {type(out)}"
-        assert all(_check_params_and_buffers_type(m, lambda x: not isinstance(x, MultiTensor))), (
-            "Expected all parameters and buffers have been converted back to tensor."
-        )
+        assert all(
+            _check_params_and_buffers_type(m, lambda x: not isinstance(x, MultiTensor))
+        ), "Expected all parameters and buffers have been converted back to tensor."
         quantize_(m, apply_auto_round(), _is_two_linear, device=device)
         for l in m.modules():
             if isinstance(l, torch.nn.Linear):
@@ -131,9 +131,9 @@ class TestAutoRound(TestCase):
     @parametrize("device", _AVAILABLE_DEVICES)
     @torch.no_grad()
     def test_wrap_model_with_multi_tensor(self, device: str):
-        
+
         _is_model_with_inplace_op = lambda mod, fqn: isinstance(mod, ModelWithInplaceOp)
-        
+
         DIM = 128
         m = M2(DIM).eval().to(device)
         prepare_model_for_applying_auto_round_(
@@ -144,9 +144,9 @@ class TestAutoRound(TestCase):
             iters=20,
             device=device,
         )
-        assert all(_check_params_and_buffers_type(m, lambda x: isinstance(x, MultiTensor))), (
-            "Expected all parameters and buffers to be `MultiTensor`."
-        )
+        assert all(
+            _check_params_and_buffers_type(m, lambda x: isinstance(x, MultiTensor))
+        ), "Expected all parameters and buffers to be `MultiTensor`."
         input1 = []
         input2 = []
         for _ in range(2):
@@ -157,9 +157,9 @@ class TestAutoRound(TestCase):
         mt_input2 = MultiTensor(input2)
         out = m(mt_input1, mt_input2)
         assert isinstance(out, MultiTensor), f"Expected MultiTensor, got {type(out)}"
-        assert all(_check_params_and_buffers_type(m, lambda x: not isinstance(x, MultiTensor))), (
-            "Expected all parameters and buffers have been converted back to tensor."
-        )
+        assert all(
+            _check_params_and_buffers_type(m, lambda x: not isinstance(x, MultiTensor))
+        ), "Expected all parameters and buffers have been converted back to tensor."
         quantize_(m, apply_auto_round(), _is_model_with_inplace_op, device=device)
         for l in m.modules():
             if isinstance(l, torch.nn.Linear):
