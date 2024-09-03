@@ -67,7 +67,6 @@ def freeze_random(seed=0):
     g.manual_seed(seed)
 
     if torch.cuda.is_available():
-        torch.use_deterministic_algorithms(True, warn_only=True)
         torch.cuda.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
 

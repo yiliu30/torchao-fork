@@ -2,7 +2,7 @@ import argparse
 import torchao.prototype.autoround.utils as ar_utils
 ar_utils.freeze_random(42)
 import torch
-
+torch.use_deterministic_algorithms(True, warn_only=True)
 import torchao
 
 import torchao.quantization
