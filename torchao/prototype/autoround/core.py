@@ -22,7 +22,7 @@ class _AutoRoundConfig:
     bits: int = 4
     group_size: int = 128
     iters: int = 200
-    use_optimized_layer_output: bool = True
+    use_optimized_layer_output: bool = False
 
 
 _auto_round_config = _AutoRoundConfig()
@@ -84,7 +84,7 @@ def prepare_model_for_applying_auto_round_(
     bits: int = 4,
     group_size: int = 128,
     iters: int = 200,
-    use_optimized_layer_output: bool = True,
+    use_optimized_layer_output: bool = False,
     device: Optional[torch.types.Device] = None,
 ):
     """Prepares the model for applying auto round optimization.
@@ -96,7 +96,7 @@ def prepare_model_for_applying_auto_round_(
         bits (int, optional): The number of bits for quantization. Defaults to 4, options are 1 to 8.
         group_size (int, optional): The group size for quantization. Defaults to 128.
         iters (int, optional): The number of iterations for optimization. Defaults to 200.
-        use_optimized_layer_output (bool, optional): Whether to use optimized layer output. Defaults to True.
+        use_optimized_layer_output (bool, optional): Whether to use optimized layer output. Defaults to False.
         device (Optional[torch.types.Device], optional): The device to use for accelrating optimization and calibration.
             Defaults to None.
     """
@@ -108,9 +108,7 @@ def prepare_model_for_applying_auto_round_(
     _auto_round_config.group_size = group_size
     _auto_round_config.iters = iters
     _auto_round_config.use_optimized_layer_output = use_optimized_layer_output
-    
-    _auto_round_config.use_optimized_layer_output = False
-    logging.warning(f"Force to use optimized layer output: {_auto_round_config.use_optimized_layer_output}")
+
     logging.warning(f"config {_auto_round_config}")
 
     # Wrap the model buffers and parameters with `MultiTensor`

@@ -11,7 +11,7 @@ from torchao.prototype.autoround.core import (
 )
 from torchao.prototype.autoround.multi_tensor import MultiTensor
 from torchao.quantization import quantize_
-
+import logging
 ar_utils.freeze_random(42)
 
 
@@ -27,6 +27,7 @@ def quantize_model_with_autoround_(
     dataset_name: str = "NeelNanda/pile-10k",
     bs: int = 8,
     nsamples: int = 128,
+    use_optimized_layer_output: bool = False,
 ):
     # Step 1. Prepare the model for applying auto-round
 
@@ -39,6 +40,7 @@ def quantize_model_with_autoround_(
         bits,
         group_size,
         iters,
+        use_optimized_layer_output,
         device=device,
     )
 
@@ -103,6 +105,7 @@ def main(args):
         dataset_name=args.dataset_name,
         bs=args.train_bs,
         nsamples=args.nsamples,
+        use_optimized_layer_output=args.use_optimized_layer_output,
     )
     # Revert the `use_cache` for generation stage.
     model.config.use_cache = True
@@ -157,6 +160,12 @@ if __name__ == "__main__":
         default=False,
         action="store_true",
         help="Quantize the `lm_head` or not",
+    )
+    parser.add_argument(
+        "--use_optimized_layer_output",
+        default=False,
+        action="store_true",
+        help="Use the optimized layer output for next layer or not",
     )
     parser.add_argument(
         "-d",
