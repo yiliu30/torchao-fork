@@ -63,8 +63,22 @@ class ModelWithInplaceOp(torch.nn.Module):
         x = x + self.lin(x)
         # update buffer
         self.other[idx] = x
-        return x, self.other
+        return x
 
+
+class M2(torch.nn.Module):
+    def __init__(self, DIM=128):
+        super().__init__()
+        self.m1 = ModelWithInplaceOp(DIM)
+        self.m2  = ModelWithInplaceOp(DIM)
+        
+    def forward(self, x, idx):
+        x = self.m1(x, idx)
+        x = self.m2(x, idx)
+        return x
+    
+    
+    
 
 
 def _check_params_and_buffers_type(module, check_fun):
@@ -116,12 +130,12 @@ class TestAutoRound(TestCase):
     @pytest.mark.skip(not TORCH_VERSION_AT_LEAST_2_5, "Requires torch 2.5 or later")
     @parametrize("device", _AVAILABLE_DEVICES)
     @torch.no_grad()
-    def test_wrap_model_state_dict_with_multi_tensor(self, device: str):
+    def test_wrap_model_with_multi_tensor(self, device: str):
         
         _is_model_with_inplace_op = lambda mod, fqn: isinstance(mod, ModelWithInplaceOp)
         
         DIM = 128
-        m = ModelWithInplaceOp(DIM).eval().to(device)
+        m = M2(DIM).eval().to(device)
         prepare_model_for_applying_auto_round_(
             m,
             is_target_module=_is_model_with_inplace_op,
@@ -142,9 +156,7 @@ class TestAutoRound(TestCase):
         mt_input1 = MultiTensor(input1)
         mt_input2 = MultiTensor(input2)
         out = m(mt_input1, mt_input2)
-        # TODO(Yi) Why hook is not working here?
-        from torchao.prototype.autoround.core import _replace_model_buffers_and_params, _multi_tensor_to_tensor
-        m = _replace_model_buffers_and_params(m, _multi_tensor_to_tensor)
+        assert isinstance(out, MultiTensor), f"Expected MultiTensor, got {type(out)}"
         assert all(_check_params_and_buffers_type(m, lambda x: not isinstance(x, MultiTensor))), (
             "Expected all parameters and buffers have been converted back to tensor."
         )
