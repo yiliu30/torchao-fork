@@ -26,7 +26,7 @@ from torchao._models._eval import TransformerEvalWrapper, InputRecorder
 from tokenizer import get_tokenizer
 import time
 from torchao.quantization.GPTQ import Int4WeightOnlyGPTQQuantizer
-from torchao._models.llama.model import prepare_inputs_for_model
+from torchao._models.llama.model import prepare_inputs_for_model, TransformerBlock
 from torchao.utils import TORCH_VERSION_AT_LEAST_2_5
 
 def run_evaluation(
@@ -89,6 +89,51 @@ def run_evaluation(
             dtype = _NBITS_TO_DTYPE[nbits]
             group_size = int(_quant_args[2])
             quantize_(model, uintx_weight_only(dtype, group_size))
+        if "autoround" in quantization:
+            from torchao.prototype.autoround.autoround_llm import quantize_model_with_autoround_
+            from transformers import AutoTokenizer
+
+            _tokenizer = AutoTokenizer.from_pretrained(checkpoint_path.parent)
+            # parse args from quantization string:
+            #   autoround-<model_device>-<quant_lm_head>-<iters>-<groupsize>-<batch_size>-<seqlen>-<nsamples>
+            #   A lightweight configuration for generation benchmarking.
+            _quant_args = quantization.split("-")
+            _default_quant_args = [True, 1, 128, 1, 512, 32]
+            _model_devie = _quant_args[1] if len(_quant_args) > 1 else device
+            _quant_args = _quant_args[2:]
+            quant_lm_head, iters, groupsize, batch_size, seqlen, nsamples = [
+                int(x) for x in _quant_args
+            ] + _default_quant_args[len(_quant_args) :]
+            model = model.to(_model_devie)
+            print(
+                (
+                    f"Quantizing model with autoround(iters={iters}, groupsize={groupsize}, "
+                    f"quant_lm_head={quant_lm_head}, batch_size={batch_size}, seqlen={seqlen}, nsamples={nsamples})"
+                )
+            )
+            with torch.device(_model_devie):
+                model.setup_caches(
+                    max_batch_size=batch_size, max_seq_length=seqlen, training=True
+                )
+
+            if quant_lm_head:
+                is_target_module = (
+                    lambda mod, fqn: isinstance(mod, TransformerBlock) or "output" in fqn
+                )
+            else:
+                is_target_module = lambda mod, fqn: isinstance(mod, TransformerBlock)
+            quantize_model_with_autoround_(
+                model=model,
+                tokenizer=_tokenizer,
+                is_target_module=is_target_module,
+                bits=4,
+                seqlen=seqlen,
+                bs=batch_size,
+                iters=iters,
+                nsamples=nsamples,
+            )
+            model.to(device)
+            model.reset_caches()
         if "int4wo" in quantization and "gptq" in quantization:
             groupsize=int(quantization.split("-")[-2])
             assert groupsize in [32,64,128,256], f"int4wo groupsize needs to be one of [32,64,128,256] but got {groupsize}"
