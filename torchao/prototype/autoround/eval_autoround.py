@@ -1,15 +1,39 @@
 import argparse
+import logging
+import os
 
-import torchao.prototype.autoround.utils as ar_utils
-
-ar_utils.freeze_random(42)
 import torch
 
-torch.use_deterministic_algorithms(True, warn_only=True)
 import torchao
-
+import torchao.prototype.autoround.utils as ar_utils
 import torchao.quantization
 from torchao.utils import TORCH_VERSION_AT_LEAST_2_5
+
+logger = logging.getLogger(__name__)
+
+ar_utils.freeze_random(42)
+
+
+def _use_deterministic():
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    torch.use_deterministic_algorithms(True, warn_only=False)
+    os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+    logger.warning(
+        (
+            "Reproducibility is enabled with `AO_USE_DETERMINISTIC_ALGORITHMS=1`, which sets "
+            "`torch.use_deterministic_algorithms(True, warn_only=False)` and "
+            "environment variable `CUBLAS_WORKSPACE_CONFIG` to `:4096:8`.\n"
+            "Please note that this may impact performance, or cause crashes if the model includes non-deterministic operations."
+        )
+    )
+
+
+AO_USE_DETERMINISTIC_ALGORITHMS = (
+    os.environ.get("AO_USE_DETERMINISTIC_ALGORITHMS", "0") == "1"
+)
+if AO_USE_DETERMINISTIC_ALGORITHMS:
+    _use_deterministic()
 
 
 @ar_utils.dump_elapsed_time()
@@ -62,7 +86,9 @@ def main(args):
         )
         model.eval()
         model_device = args.model_device
-        ar_utils.gen_text(model, tokenizer, "Float model", max_length=50)
+        # `sorted_logits` does not have a deterministic implementation
+        if not AO_USE_DETERMINISTIC_ALGORITHMS:
+            ar_utils.gen_text(model, tokenizer, "Float model", max_length=50)
         model = model.to(model_device)
         model.config.use_cache = False
         msg = "Float-model" if args.eval_float_model else "Quantized-model"
@@ -122,12 +148,14 @@ def main(args):
                     nsamples=args.nsamples,
                     use_optimized_layer_output=args.use_optimized_layer_output,
                     gradient_accumulate_steps=args.gradient_accumulate_steps,
+                    compile_optimization_process=args.compile_optimization_process,
                 )
             quantized_layer_cnt = ar_utils.count_tensor_of_type(
                 model, torchao.dtypes.AffineQuantizedTensor
             )
             msg += f" quantized {quantized_layer_cnt} Linear layers "
-        ar_utils.gen_text(model, tokenizer, msg, max_length=50)
+        if not AO_USE_DETERMINISTIC_ALGORITHMS:
+            ar_utils.gen_text(model, tokenizer, msg, max_length=50)
 
         bench_accuracy(model, tokenizer, tasks=args.tasks, msg=msg)
 
@@ -190,6 +218,13 @@ if __name__ == "__main__" and TORCH_VERSION_AT_LEAST_2_5 and torch.cuda.is_avail
         default=False,
         action="store_true",
         help="Use the optimized layer output for next layer or not",
+    )
+    parser.add_argument(
+        "-c",
+        "--compile_optimization_process",
+        default=False,
+        action="store_true",
+        help="Whether to compile the optimization process",
     )
     parser.add_argument(
         "-d",
