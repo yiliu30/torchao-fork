@@ -20,6 +20,7 @@ class _AutoRoundConfig:
     group_size: int = 128
     iters: int = 200
     use_optimized_layer_output: bool = False
+    gradient_accumulate_steps: int = 1
 
 
 _auto_round_config = _AutoRoundConfig()
@@ -82,6 +83,7 @@ def prepare_model_for_applying_auto_round_(
     group_size: int = 128,
     iters: int = 200,
     use_optimized_layer_output: bool = False,
+    gradient_accumulate_steps: Optional[int] = 1,
     device: Optional[torch.types.Device] = None,
 ):
     """Prepares the model for applying auto round optimization.
@@ -105,6 +107,7 @@ def prepare_model_for_applying_auto_round_(
     _auto_round_config.group_size = group_size
     _auto_round_config.iters = iters
     _auto_round_config.use_optimized_layer_output = use_optimized_layer_output
+    _auto_round_config.gradient_accumulate_steps = gradient_accumulate_steps
 
     logging.warning(f"config {_auto_round_config}")
 
@@ -312,6 +315,7 @@ def _apply_auto_round_optimization(
         bits=config.bits,
         iters=config.iters,
         group_size=config.group_size,
+        gradient_accumulate_steps=config.gradient_accumulate_steps,
         amp=True,
         model_dtype=next(block.parameters()).dtype,
     )

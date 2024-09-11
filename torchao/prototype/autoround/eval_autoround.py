@@ -121,6 +121,7 @@ def main(args):
                     bs=args.train_bs,
                     nsamples=args.nsamples,
                     use_optimized_layer_output=args.use_optimized_layer_output,
+                    gradient_accumulate_steps=args.gradient_accumulate_steps,
                 )
             quantized_layer_cnt = ar_utils.count_tensor_of_type(
                 model, torchao.dtypes.AffineQuantizedTensor
@@ -171,6 +172,12 @@ if __name__ == "__main__" and TORCH_VERSION_AT_LEAST_2_5 and torch.cuda.is_avail
         default=2048,
         type=int,
         help="Sequence length for calibration process",
+    )
+    parser.add_argument(
+        "--gradient_accumulate_steps",
+        default=1,
+        type=int,
+        help="Number of gradient accumulation steps",
     )
     parser.add_argument(
         "--quant_lm_head",
