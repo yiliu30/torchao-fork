@@ -98,8 +98,9 @@ def prepare_model_for_applying_auto_round_(
         group_size (int, optional): The group size for quantization. Defaults to 128.
         iters (int, optional): The number of iterations for optimization. Defaults to 200.
         use_optimized_layer_output (bool, optional): Whether to use optimized layer output. Defaults to False.
-        compile_optimization_process (Optional[bool], optional): Whether to compile the optimization process. Defaults to False.
-        device (Optional[torch.types.Device], optional): The device to use for accelrating optimization and calibration.
+        gradient_accumulate_steps (Optional[int]): The number of gradient accumulation steps. Defaults to 1.
+        compile_optimization_process (Optional[bool]): Whether to compile the optimization process. Defaults to False.
+        device (Optional[torch.types.Device]): The device to use for accelrating optimization and calibration.
             Defaults to None.
     """
     _multi_tensor_config.device = device

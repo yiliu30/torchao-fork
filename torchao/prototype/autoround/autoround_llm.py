@@ -29,6 +29,7 @@ def quantize_model_with_autoround_(
     bs: int = 8,
     nsamples: int = 128,
     use_optimized_layer_output: bool = False,
+    gradient_accumulate_steps: Optional[int] = 1,
     compile_optimization_process:  Optional[bool] = False,
 ):
     # Step 1. Prepare the model for applying auto-round
@@ -43,6 +44,7 @@ def quantize_model_with_autoround_(
         group_size,
         iters,
         use_optimized_layer_output,
+        gradient_accumulate_steps,
         compile_optimization_process,
         device=device,
     )
