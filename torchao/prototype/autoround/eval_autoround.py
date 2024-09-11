@@ -21,8 +21,8 @@ def _use_deterministic():
     os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
     logger.warning(
         (
-            "Reproducibility is enabled with `AO_USE_DETERMINISTIC_ALGORITHMS=1`, which sets: \n"
-            " `torch.use_deterministic_algorithms(True, warn_only=False)` and "
+            "Reproducibility is enabled with `AO_USE_DETERMINISTIC_ALGORITHMS=1`, which sets "
+            "`torch.use_deterministic_algorithms(True, warn_only=False)` and "
             "environment variable `CUBLAS_WORKSPACE_CONFIG` to `:4096:8`.\n"
             "Please note that this may impact performance, or cause crashes if the model includes non-deterministic operations."
         )
@@ -30,7 +30,7 @@ def _use_deterministic():
 
 
 AO_USE_DETERMINISTIC_ALGORITHMS = (
-    os.environ.get("AO_USE_DETERMINISTIC_ALGORITHMS", "0") == 1
+    os.environ.get("AO_USE_DETERMINISTIC_ALGORITHMS", "0") == "1"
 )
 if AO_USE_DETERMINISTIC_ALGORITHMS:
     _use_deterministic()
