@@ -5,7 +5,28 @@ import torchao.prototype.autoround.utils as ar_utils
 ar_utils.freeze_random(42)
 import torch
 
-torch.use_deterministic_algorithms(True, warn_only=True)
+import os
+
+import logging
+
+logger = logging.getLogger(__name__)
+
+def force_reproduce():
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    torch.use_deterministic_algorithms(True, warn_only=False)
+    os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+    logger.warning(
+        ("Enabled reproducibility with `FORCE_REPRODUCE=1`, which sets: \n"
+         " `torch.use_deterministic_algorithms(True, warn_only=False)` and "
+         "environment variable `CUBLAS_WORKSPACE_CONFIG` to `:4096:8`.\n"
+         "Please note that this may impact performance, or cause crashes if the model includes non-deterministic operations."
+    ))
+
+FORCE_REPRODUCE =  os.environ.get("FORCE_REPRODUCE", "0") == 1
+if FORCE_REPRODUCE:
+    force_reproduce()
+
 import torchao
 
 import torchao.quantization
@@ -62,7 +83,9 @@ def main(args):
         )
         model.eval()
         model_device = args.model_device
-        ar_utils.gen_text(model, tokenizer, "Float model", max_length=50)
+        # sorted_logits does not have a deterministic implementation
+        if not FORCE_REPRODUCE:
+            ar_utils.gen_text(model, tokenizer, "Float model", max_length=50)
         model = model.to(model_device)
         model.config.use_cache = False
         msg = "Float-model" if args.eval_float_model else "Quantized-model"
@@ -126,7 +149,8 @@ def main(args):
                 model, torchao.dtypes.AffineQuantizedTensor
             )
             msg += f" quantized {quantized_layer_cnt} Linear layers "
-        ar_utils.gen_text(model, tokenizer, msg, max_length=50)
+        if not FORCE_REPRODUCE:
+            ar_utils.gen_text(model, tokenizer, msg, max_length=50)
 
         bench_accuracy(model, tokenizer, tasks=args.tasks, msg=msg)
 
