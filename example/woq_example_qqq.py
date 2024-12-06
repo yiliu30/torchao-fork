@@ -69,7 +69,7 @@ with torch.no_grad(), torch.device("cuda"):
 
 """
 
-/home/yliu7/miniforge3/envs/ao/lib/python3.11/site-packages/torch/__init__.py:1144: UserWarning: torch.set_default_tensor_type() is deprecated as of PyTorch 2.1, please use torch.set_default_dtype() and torch.set_default_device() as alternatives. (Triggered internally at ../torch/csrc/tensor/python_tensor.cpp:432.)
+/home/user/miniforge3/envs/ao/lib/python3.11/site-packages/torch/__init__.py:1144: UserWarning: torch.set_default_tensor_type() is deprecated as of PyTorch 2.1, please use torch.set_default_dtype() and torch.set_default_device() as alternatives. (Triggered internally at ../torch/csrc/tensor/python_tensor.cpp:432.)
   _C._set_default_tensor_type(t)
 qmodel : TwoLiear(
   (linear1): Linear(in_features=1024, out_features=2048, weight=LinearActivationQuantizedTensor(activation=<function _int8_symm_per_token_quant at 0x7f5ae02d9580>, weight=MarlinQQQTensor(shape=torch.Size([2048, 1024]), block_size=(1, 128), device=cuda:0, _layout=MarlinQQQLayout(), tensor_impl_dtype=torch.int32, quant_min=-8, quant_max=7)))
@@ -91,19 +91,19 @@ maxdiff: 0.12890625
 (Pdb) bt
   /home/user/torchao/example/woq_example_qqq.py(63)<module>()
 -> qmodel_out = model(example_input)
-  /home/yliu7/miniforge3/envs/ao/lib/python3.11/site-packages/torch/nn/modules/module.py(1736)_wrapped_call_impl()
+  /home/user/miniforge3/envs/ao/lib/python3.11/site-packages/torch/nn/modules/module.py(1736)_wrapped_call_impl()
 -> return self._call_impl(*args, **kwargs)
-  /home/yliu7/miniforge3/envs/ao/lib/python3.11/site-packages/torch/nn/modules/module.py(1747)_call_impl()
+  /home/user/miniforge3/envs/ao/lib/python3.11/site-packages/torch/nn/modules/module.py(1747)_call_impl()
 -> return forward_call(*args, **kwargs)
   /home/user/torchao/example/woq_example_qqq.py(12)forward()
 -> x = self.linear1(x)
-  /home/yliu7/miniforge3/envs/ao/lib/python3.11/site-packages/torch/nn/modules/module.py(1736)_wrapped_call_impl()
+  /home/user/miniforge3/envs/ao/lib/python3.11/site-packages/torch/nn/modules/module.py(1736)_wrapped_call_impl()
 -> return self._call_impl(*args, **kwargs)
-  /home/yliu7/miniforge3/envs/ao/lib/python3.11/site-packages/torch/nn/modules/module.py(1747)_call_impl()
+  /home/user/miniforge3/envs/ao/lib/python3.11/site-packages/torch/nn/modules/module.py(1747)_call_impl()
 -> return forward_call(*args, **kwargs)
-  /home/yliu7/miniforge3/envs/ao/lib/python3.11/site-packages/torch/nn/modules/linear.py(125)forward()
+  /home/user/miniforge3/envs/ao/lib/python3.11/site-packages/torch/nn/modules/linear.py(125)forward()
 -> return F.linear(input, self.weight, self.bias)
-  /home/yliu7/miniforge3/envs/ao/lib/python3.11/site-packages/torch/utils/_device.py(106)__torch_function__()
+  /home/user/miniforge3/envs/ao/lib/python3.11/site-packages/torch/utils/_device.py(106)__torch_function__()
 -> return func(*args, **kwargs)
   /home/user/torchao/torchao/utils.py(431)_dispatch__torch_function__()
 -> return cls._ATEN_OP_OR_TORCH_FN_TABLE[func](func, types, args, kwargs)
