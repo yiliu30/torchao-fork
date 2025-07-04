@@ -12,6 +12,7 @@ from torchao.utils import TORCH_VERSION_AT_LEAST_2_8
 # regressing torch.compile and while keeping things readable.
 DTYPE_FP6_E3M2 = "fp6_e3m2"
 DTYPE_FP6_E2M3 = "fp6_e2m3"
+DTYPE_FP4_E2M1 = "fp4_e2m1"
 
 # Supported element dtypes
 # TODO(future PR): add support for MX int8

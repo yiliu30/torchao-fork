@@ -21,13 +21,14 @@ from enum import Enum, auto
 from typing import Callable, Dict, Union
 
 import torch
-
+import os
 from torchao.prototype.mx_formats.config import MXGemmKernelChoice
 from torchao.prototype.mx_formats.constants import (
     BF16_EXP_BIAS,
     BLOCK_SIZE_DEFAULT,
     DTYPE_FP6_E2M3,
     DTYPE_FP6_E3M2,
+    DTYPE_FP4_E2M1,
     E8M0_EXPONENT_BIAS,
     E8M0_EXPONENT_NAN_VAL,
     F4_E2M1_MAX,
@@ -197,7 +198,7 @@ def to_mx(
         target_max_pow2 = F6_E3M2_MAX_POW2
         mbits = MBITS_F6_E3M2
         max_pos = F6_E3M2_MAX
-    elif elem_dtype == torch.float4_e2m1fn_x2:
+    elif elem_dtype == DTYPE_FP4_E2M1:
         target_max_pow2 = F4_E2M1_MAX_POW2
         mbits = MBITS_F4_E2M1
         max_pos = F4_E2M1_MAX
@@ -324,7 +325,7 @@ def to_mx(
     else:
         raise AssertionError("unsupported")
 
-    scale_e8m0_biased = scale_e8m0_biased.view(torch.float8_e8m0fnu)
+    # scale_e8m0_biased = scale_e8m0_biased.view(torch.float8_e8m0fnu)
     return scale_e8m0_biased, data_lp
 
 
@@ -344,6 +345,8 @@ def get_fp_scale(scale_e8m0):
 
     return s_fp
 
+
+_USE_CT_UNPACK = os.getenv("USE_CT_UNPACK", "0").lower() in ("1", "true", "yes")
 
 def to_dtype(
     data_lp,
@@ -393,7 +396,7 @@ def to_dtype(
         else:
             data_hp = f6_e3m2_unpacked_to_f32(data_lp)
             data_hp = data_hp.to(target_dtype).reshape(orig_shape)
-    elif elem_dtype == torch.float4_e2m1fn_x2:
+    elif elem_dtype == DTYPE_FP4_E2M1:
         if use_fp4_custom_triton_dequant_kernel:
             data_hp_rescaled = triton_f4_to_scaled_bf16(
                 data_lp,
@@ -405,11 +408,18 @@ def to_dtype(
             return data_hp_rescaled.to(target_dtype)
         else:
             # fp4
-            f4_unpacked = unpack_uint4(data_lp)
-            # for now we only have a cast to f32
-            # TODO(future PR): add cast directly to bf16
-            f32 = f4_unpacked_to_f32(f4_unpacked)
-            data_hp = f32.to(target_dtype)
+            if _USE_CT_UNPACK:
+                from compressed_tensors.compressors.quantized_compressors.nvfp4_quantized import unpack_fp4_from_uint8
+                
+                m, half_n = data_lp.shape
+                n = half_n * 2
+                data_hp = unpack_fp4_from_uint8(data_lp, m, n, dtype=target_dtype)
+            else:
+                f4_unpacked = unpack_uint4(data_lp)
+                # for now we only have a cast to f32
+                # TODO(future PR): add cast directly to bf16
+                f32 = f4_unpacked_to_f32(f4_unpacked)
+                data_hp = f32.to(target_dtype)
             # manually adjust shape to account for the unpacking
             # TODO(future PR): clean up the shape code and remove the hack
             # below
@@ -503,9 +513,9 @@ class MXTensor(torch.Tensor):
             dtype=orig_dtype,
             device=data_bits.device,
         )
-        assert scale_e8m0_bits.dtype == torch.float8_e8m0fnu, (
-            f"scale_e8m0_bits.dtype must be `torch.float8_e8m0fnu`, got {scale_e8m0_bits.dtype}"
-        )
+        # assert scale_e8m0_bits.dtype == torch.float8_e8m0fnu, (
+        #     f"scale_e8m0_bits.dtype must be `torch.float8_e8m0fnu`, got {scale_e8m0_bits.dtype}"
+        # )
         assert len(scale_e8m0_bits.shape) == 1, "unsupported"
         assert data_bits.dtype in (
             torch.float8_e4m3fn,
