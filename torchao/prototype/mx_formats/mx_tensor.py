@@ -314,7 +314,7 @@ def to_mx(
             data_lp = pack_uint6(data_lp)
         # need to reshape at the end to help inductor fuse things
         data_lp = data_lp.reshape(orig_shape)
-    elif elem_dtype == torch.float4_e2m1fn_x2:
+    elif elem_dtype == DTYPE_FP4_E2M1:
         # can't reshape at the end without handling it in the packing code,
         # punt until later since we'll need to rethink the torch.compile
         # approach for fp4x2 in any case
