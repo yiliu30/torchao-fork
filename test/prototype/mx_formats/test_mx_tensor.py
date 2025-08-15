@@ -606,16 +606,16 @@ def test_cast_to_float8_e4m3fn_saturation_behavior():
 @pytest.mark.parametrize(
     "dtype,shape,use_per_tensor_scale",
     [
-        (torch.bfloat16, (32, 64), False),
-        (torch.float32, (64, 128), False),
-        (torch.bfloat16, (128, 256), False),
+        # (torch.bfloat16, (32, 64), False),
+        # (torch.float32, (64, 128), False),
+        # (torch.bfloat16, (128, 256), False),
         (torch.bfloat16, (64, 128), True),
     ],
 )
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
-@pytest.mark.skipif(
-    not TORCH_VERSION_AT_LEAST_2_8, reason="torch.compile requires PyTorch 2.8+"
-)
+# @pytest.mark.skipif(
+#     not TORCH_VERSION_AT_LEAST_2_8, reason="torch.compile requires PyTorch 2.8+"
+# )
 def test_nvfp4_reconstruction(dtype, shape, use_per_tensor_scale):
     from torchao.prototype.mx_formats.nvfp4_tensor import (
         NVFP4Tensor,
@@ -628,7 +628,7 @@ def test_nvfp4_reconstruction(dtype, shape, use_per_tensor_scale):
         scale = per_tensor_amax_to_scale(tensor_amax)
     else:
         scale = None
-
+    breakpoint()
     x_nvfp4 = NVFP4Tensor.to_nvfp4(x, per_tensor_scale=scale)
     x_reconstructed = x_nvfp4.to_dtype(dtype)
 
@@ -658,6 +658,7 @@ def test_nvfp4_reconstruction(dtype, shape, use_per_tensor_scale):
 
     x_nvfp4_t = x_nvfp4.t()
     x_reconstructed_t = x_nvfp4_t.to_dtype(dtype)
+    breakpoint()
     assert_sqnr_gt_threshold(x.t(), x_reconstructed_t, 8.0)
 
     assert x.t().shape == x_reconstructed_t.shape, (

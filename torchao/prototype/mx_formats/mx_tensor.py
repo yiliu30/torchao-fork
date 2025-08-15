@@ -160,7 +160,7 @@ def to_mx(
         f"the last dimension of shape {data_hp.shape} must be divisible by block_size {block_size}"
     )
     assert data_hp.is_contiguous(), "unsupported"
-    assert elem_dtype in SUPPORTED_ELEM_DTYPES, "unsupported"
+    assert elem_dtype in SUPPORTED_ELEM_DTYPES, f"unsupported element dtype {elem_dtype}"
 
     orig_shape = data_hp.shape
     data_hp = data_hp.reshape(
@@ -324,8 +324,10 @@ def to_mx(
         # punt until later since we'll need to rethink the torch.compile
         # approach for fp4x2 in any case
         data_lp = data_lp.reshape(orig_shape)
+        print(f"ao data_lp: {data_lp[0][0]}, scale_fp32{scale_fp32[0][0]}")
         data_lp = f32_to_f4_unpacked(data_lp)
         orig_shape = [*orig_shape[:-1], orig_shape[-1] // 2]
+        
         data_lp = pack_uint4(data_lp)
     else:
         raise AssertionError("unsupported")

@@ -152,6 +152,7 @@ class NVFP4Tensor(torch.Tensor):
             )
             blockwise_scales, data_lp = triton_quantize_nvfp4(data_hp, per_tensor_scale)
         else:
+            breakpoint()
             blockwise_scales, data_lp = nvfp4_quantize(
                 data_hp, block_size, per_tensor_scale
             )
@@ -779,6 +780,7 @@ def nvfp4_quantize(
     block_scale = max_abs / F4_E2M1_MAX
 
     out_scales = None
+    breakpoint()
     if per_tensor_scale is None:
         # We are doing single level scaling
         block_scale_fp8 = torch.clamp(block_scale, min=E4M3_EPS, max=F8E4M3_MAX).to(
@@ -793,6 +795,8 @@ def nvfp4_quantize(
         # we want the per_tensor_scale ~= amax of the block_scale_fp32
         block_scale_fp32 = block_scale.to(torch.float32)
         # Quantize the blockwise scales w/ the per_tensor_scale
+        # per_tensor_scale = amax_full_tensor / F8E4M3_MAX
+        # scaled_block_scales = amax_block_tensor / F4_E2M1_MAX / (amax_full_tensor / F8E4M3_MAX) = amax_block_tensor / amax_full_tensor * F8E4M3_MAX / F4_E2M1_MAX
         scaled_block_scales = block_scale_fp32 / per_tensor_scale
         scaled_block_scales_fp8 = torch.clamp(
             scaled_block_scales, min=E4M3_EPS, max=F8E4M3_MAX
@@ -800,6 +804,8 @@ def nvfp4_quantize(
         scaled_block_scales_fp32 = scaled_block_scales_fp8.to(torch.float32)
         # We "temporarily" dequant the scaled_block_scales_fp32 to get the per_tensor_scale
         # To apply to data
+        # total_scale = amax_full_tensor / F8E4M3_MAX * amax_block_tensor / amax_full_tensor * F8E4M3_MAX / F4_E2M1_MAX
+        #             = amax_block_tensor / F4_E2M1_MAX
         total_scale = per_tensor_scale * scaled_block_scales_fp32
         data_scaled = data_hp / total_scale.unsqueeze(-1)
         out_scales = scaled_block_scales_fp8

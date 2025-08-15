@@ -23,7 +23,8 @@ def _n_ones(n: int) -> int:
 EBITS_F32, MBITS_F32 = 8, 23
 F32_EXP_BIAS = _n_ones(EBITS_F32 - 1)
 
-
+# import numpy as np
+# return np.binary_repr(x.item())
 def _f32_to_floatx_unpacked(x: Tensor, ebits: int, mbits: int) -> Tensor:
     """Convert FP32 numbers to sub-byte floating point numbers with the given
     number of exponent and mantissa bits.
@@ -106,20 +107,125 @@ def _f32_to_floatx_unpacked(x: Tensor, ebits: int, mbits: int) -> Tensor:
     denormal_x = denormal_x.view(torch.int32)
     denormal_x -= denorm_mask_int
     denormal_x = denormal_x.to(torch.uint8)
+    
+    
+    ###########
+    ######
+    #########    
+    #           2   1          0
+    #            3210987 65432109 87654321 
+    # s eeeeeeee mmmmmmm mmmmmmmm mmmmmmmm
+    # magic_adder  |
+    # 0 00000000 0011111 11111111 11111111
+    # 1.25         |
+    # 0 01111111 0100000 00000000 00000000
+    # exp_bias - F32_EXP_BIAS:-126 << 23
+    # 1 10000010 0000000 00000000 00000000
+    # normal_x + -126 << 23
+    # 0 00000001 0100000 00000000 00000000
+    # magic_adder:
+    # 0 00000000 0011111 11111111 11111111
+    # + magic_adder =:
+    # 0 00000001 0111111 11111111 11111111
+    # mant_odd:
+    # 0 00000000 0000000 00000000 00000000
+    # + mat_odd =: 
+    # 0 00000001 0111111 11111111 11111111
+    ###########
+    ######
+    ######### 
+    #           2   1          0
+    #            3210987 65432109 87654321 
+    # s eeeeeeee mmmmmmm mmmmmmmm mmmmmmmm
+    # magic_adder  |
+    # 0 00000000 0011111 11111111 11111111
+    # 5.0 = 4 * (1.25)
+    #     = 129 -127   -2
+    # 0 10000001 0100000 00000000 00000000
+    # exp_bias - F32_EXP_BIAS:-126 << 23
+    # 1 10000010 0000000 00000000 00000000
+    # normal_x + -126 << 23:
+    # 0 00000011 0100000 00000000 00000000
+    # magic_adder:
+    # 0 00000000 0011111 11111111 11111111
+    # + magic_adder =:
+    # 0 00000011 0111111 11111111 11111111
+    #        \___/
+    ###########
+    ######
+    ######### 
 
-    #
     # branch 3: stay in normal range, adjust the exponent and round
     #
     normal_x = x.view(torch.int32)
+    # 
+    # seeeeeee emmmmmmm mmmmmmmm mmmmmmmm
+    # normal_x:
+    # 00111111 10100000 00000000 00000000
+    #            |---------------------->
+    #            |
+    # 23 - 1  = 22
+    # normal_x >> 22:
+    # 00000000 00000000 00000000 11111110
+    breakpoint()
     # resulting mantissa is odd
     mant_odd = (normal_x >> (MBITS_F32 - mbits)) & 1
     # update exponent, rounding bias part 1
+    # exp_bias - F32_EXP_BIAS:-126
+    # 11111111 11111111 11111111 10000010
+    # <<  MBITS_F32 23:
+    #           |<=======================
+    # 11000001 00000000 00000000 00000000
+    # # + magic_adder
+    # +00000000 00011111 11111111 11111111
+    # val_to_add=:
+    #  11000001 00011111 11111111 11111111
+    #  normal_x+=val_to_add
+    # +00111111 10100000 00000000 00000000
+    # normal_x:
+    #  00000000 10111111 11111111 11111111
+    # + mant_odd
+    # +00000000 00000000 00000000 00000000
+    # normal_x:
+    #  00000000 10111111 11111111 11111111
+    # >> 22
+    #  00000000 00000000 00000000 00000010
+    
+    
+    # magic_adder:
+    #  seeeeeee emmmmmmm mmmmmmmm mmmmmmmm
+    #  00000000 00011111 11111111 11111111
+    # 
+    breakpoint()
     val_to_add = ((exp_bias - F32_EXP_BIAS) << MBITS_F32) + magic_adder
+    
+    # normal_x
+    #   127
+    # 0 01111111 0100000 00000000 00000000
+    #             |
+    # (exp_bias - F32_EXP_BIAS) << MBITS_F32):
+    # 1 10000010 0000000 00000000 00000000
+    # 0 00000001 0100000 00000000 00000000
+    
+    # magic_adder:
+    #+0 00000000 0011111 11111111 11111111
+    #=
+    # 0 00000001 0111111 11111111 11111111
+    #+ mant_odd
+    # 0 00000000 0000000 00000000 00000000
+    # 0 00000001 0111111 11111111 11111111
+    #             [21-------------------0]
+    # => 0000001 0
     normal_x += val_to_add
     # rounding bias part 2
     normal_x += mant_odd
     # take the bits!
+    #  00111111 10100000 00000000 00000000
+    breakpoint()
     normal_x = normal_x >> (MBITS_F32 - mbits)
+    #  00111111 10100000 00000000 00000000
+    #             |===========>
+    #  01000000 00000000 00000000 00000000
     normal_x = normal_x.to(torch.uint8)
 
     #
